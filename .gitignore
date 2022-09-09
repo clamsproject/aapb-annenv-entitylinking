@@ -1,2 +1,5 @@
 .DS_Store
 *~
+venv
+data*.tab
+backup.sh

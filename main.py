@@ -1,38 +1,85 @@
 """Named Entity Linking annotation tool
 
+Requirements:
+$ pip install lorem==01.1
+$ pip install wikipedia==1.4.0
+
 Assumes:
 - all annotations are extents
 - no annotations with fragments
 
+Links are made to Wikipedia at https://en.wikipedia.org/wiki/Main_Page
+
+For example:  https://en.wikipedia.org/wiki/Jim_Lehrer
+But we only need to enter Jim_Lehrer
+
+Location of source files and NER annotations:
+- source files: https://github.com/clamsproject/wgbh-collaboration
+- annotations: https://github.com/clamsproject/clams-aapb-annotations
+
 TODO to make this a working tool:
 - add help function
 - add backups
+- add suggestions if entity was annotated before
+- use 'c' as a command to copy the link suggestion
 - connect annotations to the data
 - allow more ways to browse annotations
 - add way to fix mistakes
+- create one output file per input file
+- use 'w' to print wikipedia link
+- do we need to worry about languages?
+- add a validation step where we checker wether the link actually exists
+- allow entering "Jim Lehrer" instead of "Jim_Lehrer"
+  (for validation we may need to use a different version as for saving)
+
+For wikipedia use https://pypi.org/project/wikipedia/
+
+>>> import wikipedia as wiki
+>>> wiki.page('Jim Lehrer', auto_suggest=False, redirect=False)
+<WikipediaPage 'Jim Lehrer'>
+>>> wiki.page('Jim_Lehrer', auto_suggest=False, redirect=False)
+<WikipediaPage 'Jim Lehrer'>
+>>> wiki.page('xJim_Lehrer', auto_suggest=False, redirect=False)
+Traceback (most recent call last):
+  File "<stdin>", line 1, in <module>
+  File "/Applications/ADDED/python/env/clams/linking-annotation-tool/lib/python3.8/site-packages/wikipedia/wikipedia.py", line 276, in page
+    return WikipediaPage(title, redirect=redirect, preload=preload)
+  File "/Applications/ADDED/python/env/clams/linking-annotation-tool/lib/python3.8/site-packages/wikipedia/wikipedia.py", line 299, in __init__
+    self.__load(redirect=redirect, preload=preload)
+  File "/Applications/ADDED/python/env/clams/linking-annotation-tool/lib/python3.8/site-packages/wikipedia/wikipedia.py", line 345, in __load
+    raise PageError(self.title)
+wikipedia.exceptions.PageError: Page id "xJim_Lehrer" does not match any pages. Try another id!
 
 """
 
 import os
 import pathlib
+import collections
+from urllib import request
+
 import lorem
 
 
-SOUARCE_FILES = None
-REPOSITORY = '../../clams-aapb-annotations/'
-NER_ANNOTATIONS = REPOSITORY + 'uploads/2022-jun-namedentity/annotations/'
-NEL_ANNOTATIONS = 'data.tab'
+SOURCES_REPO = '../../wgbh-collaboration/'
+ANNOTATIONS_REPO = '../../clams-aapb-annotations/'
+
+SOURCES = "%s/21" % SOURCES_REPO
+ANNOTATIONS = '%s/uploads/2022-jun-namedentity/annotations/' % ANNOTATIONS_REPO
+TOOL_OUTPUT = 'data.tab'
 
 
 class CorpusEntities(object):
 
-    def __init__(self, folder):
-        self.folder = folder
+    def __init__(self, annotations_folder, sources_folder):
+        self.annotations_folder = annotations_folder
+        self.sources_folder = sources_folder
         self.data = []
         self.idx = {}
-        for fname in os.listdir(folder):
-            fpath = os.path.join(folder, fname)
+        self.sources = []
+        for fname in os.listdir(annotations_folder):
+            fpath = os.path.join(annotations_folder, fname)
             file_annos = FileEntities(fname, fpath)
+            print(fname)
             self.data.append(file_annos)
             self.idx[fname] = file_annos
 
@@ -50,6 +97,18 @@ class CorpusEntities(object):
         file_entities = self.idx.get(annotation[0])
         entity = file_entities.data.get(annotation[1])
         entity.link = annotation[-1]
+
+    def suggest_link(self, entity_text):
+        suggestions = []
+        for file_entities in self:
+            suggestion = file_entities.data.get(entity_text)
+            if suggestion is not None and suggestion.link is not None:
+                suggestions.append(suggestion.link)
+        c = collections.Counter(suggestions)
+        try:
+            return c.most_common()[0][0]
+        except IndexError:
+            return None
 
             
 class FileEntities(object):
@@ -148,15 +207,17 @@ class Annotator(object):
                 annotation = line.strip().split('\t')
                 self.annotations.append(annotation)
                 self.corpus_entities.add_annotation(annotation)
-                
+
     def status(self):
-        print("\nStatus on %s\n" % self.corpus_entities.folder)
+        print("\nStatus on %s\n" % self.corpus_entities.annotations_folder)
         for file_entities in self.corpus_entities:
             (name, percent_done_types, percent_done_tokens) = file_entities.status()
-            print('    %s %d %d' % (name, percent_done_types, percent_done_tokens))
+            #print('    %s %d %d' % (name, percent_done_types, percent_done_tokens))
+            print('    %s %3d%%' % (name, percent_done_types))
 
     def loop(self):
         self.action = None
+        self.link_suggestion = None
         while True:
             #print("action=[%s]\n" % self.action)
             if self.action in ('q', 'quit', 'exit'):
@@ -180,17 +241,21 @@ class Annotator(object):
 
     def action_store_link(self):
         if self.next_entity is not None:
-            self.next_entity.link = self.action
-            # TODO: maybe add all the extent identifiers
-            annotation = (self.next_entity.file_name,
-                          self.next_entity.text(),
-                          self.next_entity.entity_class(),
-                          str(len(self.next_entity)),
-                          self.action)
-            #print(self.next_entity, annotation)
-            self.annotations.append(annotation)
-            with open(self.annotations_file, 'a') as fh:
-                fh.write('%s\n' % '\t'.join(annotation))
+            if self.validate_link():
+                self.next_entity.link = self.action
+                # TODO: add all the extent identifiers?
+                # TODO: add timestamp?
+                annotation = (self.next_entity.file_name,
+                              self.next_entity.text(),
+                              self.next_entity.entity_class(),
+                              str(len(self.next_entity)),
+                              self.action)
+                self.annotations.append(annotation)
+                with open(self.annotations_file, 'a') as fh:
+                    fh.write('%s\n' % '\t'.join(annotation))
+            else:
+                print("\n%sWARNING: '%s' is not an entry in Wikipedia.%s"
+                      % (RED, self.action, END))
 
     def action_print_next(self):
         self.next_entity = self.corpus_entities.next()
@@ -201,6 +266,9 @@ class Annotator(object):
             left = lorem.sentence().lower()[:-1]
             right = lorem.sentence().lower()[:-1]
             print('    %50s  [%s%s%s]  %s' % (left, BLUE, text, END, right))
+        self.link_suggestion = self.corpus_entities.suggest_link(text)
+        if self.link_suggestion:
+            print('\nLink suggestion: %s' % self.link_suggestion)
 
     def action_print_annotations(self, search_term=None):
         if search_term is None:
@@ -225,16 +293,26 @@ class Annotator(object):
         print('of an entity in context and a non-command is entered then the string that')
         print('was typed in is considered to be the entity link.')
 
+    def validate_link(self):
+        """A link entered by the user is okay if it is longer than one character
+        (to avoid hasty typos) and if it occurs in Wikipedia."""
+        if len(self.action) > 1:
+            url = 'https://en.wikipedia.org/wiki/%s' % self.action
+            response = request.urlopen(url)
+            try:
+                if response.getcode() == 200:
+                    return True
+            except:
+                pass
+        return False
+    
 
 BOLD = '\u001b[1m'
 END = '\u001b[0m'
 BLUE = '\u001b[34m'
+RED = '\u001b[31m'
 
 
 if __name__ == '__main__':
 
-    corpus_entities = CorpusEntities(NER_ANNOTATIONS)
-    annotator = Annotator(corpus_entities, NEL_ANNOTATIONS)
-    #entities[0].pp()
-    #annotator.status()
-    annotator.loop()
+    Annotator(CorpusEntities(ANNOTATIONS, SOURCES), TOOL_OUTPUT).loop()
