@@ -1,8 +1,7 @@
 """Named Entity Linking annotation tool
 
 Requirements:
-$ pip install lorem==01.1
-$ pip install wikipedia==1.4.0
+$ pip install requests==2.28.1
 
 Assumes:
 - all annotations are extents
@@ -28,36 +27,16 @@ TODO to make this a working tool:
 - create one output file per input file
 - use 'w' to print wikipedia link
 - do we need to worry about languages?
-- add a validation step where we checker wether the link actually exists
+- add a validation step where we check wether the link actually exists
 - allow entering "Jim Lehrer" instead of "Jim_Lehrer"
   (for validation we may need to use a different version as for saving)
-
-For wikipedia use https://pypi.org/project/wikipedia/
-
->>> import wikipedia as wiki
->>> wiki.page('Jim Lehrer', auto_suggest=False, redirect=False)
-<WikipediaPage 'Jim Lehrer'>
->>> wiki.page('Jim_Lehrer', auto_suggest=False, redirect=False)
-<WikipediaPage 'Jim Lehrer'>
->>> wiki.page('xJim_Lehrer', auto_suggest=False, redirect=False)
-Traceback (most recent call last):
-  File "<stdin>", line 1, in <module>
-  File "/Applications/ADDED/python/env/clams/linking-annotation-tool/lib/python3.8/site-packages/wikipedia/wikipedia.py", line 276, in page
-    return WikipediaPage(title, redirect=redirect, preload=preload)
-  File "/Applications/ADDED/python/env/clams/linking-annotation-tool/lib/python3.8/site-packages/wikipedia/wikipedia.py", line 299, in __init__
-    self.__load(redirect=redirect, preload=preload)
-  File "/Applications/ADDED/python/env/clams/linking-annotation-tool/lib/python3.8/site-packages/wikipedia/wikipedia.py", line 345, in __load
-    raise PageError(self.title)
-wikipedia.exceptions.PageError: Page id "xJim_Lehrer" does not match any pages. Try another id!
 
 """
 
 import os
 import pathlib
 import collections
-from urllib import request
-
-import lorem
+import requests
 
 
 SOURCES_REPO = '../../wgbh-collaboration/'
@@ -67,6 +46,8 @@ SOURCES = "%s/21" % SOURCES_REPO
 ANNOTATIONS = '%s/uploads/2022-jun-namedentity/annotations/' % ANNOTATIONS_REPO
 TOOL_OUTPUT = 'data.tab'
 
+CONTEXT_SIZE = 40
+
 
 class CorpusEntities(object):
 
@@ -75,11 +56,16 @@ class CorpusEntities(object):
         self.sources_folder = sources_folder
         self.data = []
         self.idx = {}
-        self.sources = []
+        self.sources = {}
+        for fname in os.listdir(sources_folder):
+            if len(fname) == 39:
+                basename = os.path.splitext(fname)[0]
+                fpath = os.path.join(sources_folder, fname)
+                with open(fpath) as fh:
+                    self.sources[basename] = fh.read()
         for fname in os.listdir(annotations_folder):
             fpath = os.path.join(annotations_folder, fname)
             file_annos = FileEntities(fname, fpath)
-            print(fname)
             self.data.append(file_annos)
             self.idx[fname] = file_annos
 
@@ -110,7 +96,16 @@ class CorpusEntities(object):
         except IndexError:
             return None
 
-            
+    def get_context(self, entity):
+        basename = os.path.splitext(entity.file_name)[0]
+        p1 = entity.start
+        p2 = entity.end
+        text = self.sources.get(basename, '')
+        left = text[p1-CONTEXT_SIZE:p1]
+        right = text[p2:p2+CONTEXT_SIZE]
+        return (left, right)
+
+
 class FileEntities(object):
 
     def __init__(self, file_name, file_path):
@@ -118,7 +113,7 @@ class FileEntities(object):
         self.path = file_path
         self.data = {}
         for line in open(file_path):
-            entity = Entity(line)
+            entity = Entity(file_name, line)
             self.data.setdefault(entity.text, EntityType(file_name)).append(entity)
 
     def __str__(self):
@@ -178,16 +173,21 @@ class EntityType(object):
         
 class Entity(object):
 
-    def __init__(self, line):
+    def __init__(self, file_name, line):
         (identifier, info, text) = line.strip().split('\t')
         entity_class, p1, p2 = info.split()
         if identifier[0] != 'T':
             print("WARNING, not an extent: %s" % line)
+        self.file_name = file_name
         self.text = text
         self.identifier = identifier
         self.entity_class = entity_class
-        self.start = p1
-        self.end = p2
+        self.start = int(p1)
+        self.end = int(p2)
+
+    def __str__(self):
+        return ("<Entity %s '%s' %s %s %s>"
+                % (self.entity_class, self.text, self.file_name, self.start, self.end))
 
 
 class Annotator(object):
@@ -232,6 +232,8 @@ class Annotator(object):
                 self.action_print_annotations()
             elif self.action is not None and self.action.startswith('a '):
                 self.action_print_annotations(self.action[2:])
+            elif self.action is not None and self.action.startswith('c '):
+                self.action_set_context(self.action[2:])
             elif self.action is not None:
                 self.action_store_link()
                 self.action_print_next()
@@ -262,13 +264,21 @@ class Annotator(object):
         text = self.next_entity.text()
         entity_class = self.next_entity.entity_class()
         print("\n%s[%s] (%s)%s\n" % (BOLD, text, entity_class, END))
-        for i in range(len(self.next_entity)):
-            left = lorem.sentence().lower()[:-1]
-            right = lorem.sentence().lower()[:-1]
-            print('    %50s  [%s%s%s]  %s' % (left, BLUE, text, END, right))
+        for entity in self.next_entity:
+            left, right = self.corpus_entities.get_context(entity)
+            left = (CONTEXT_SIZE-len(left)) * ' ' + left
+            print('    %s[%s%s%s]%s' % (left, BLUE, text, END, right))
         self.link_suggestion = self.corpus_entities.suggest_link(text)
         if self.link_suggestion:
             print('\nLink suggestion: %s' % self.link_suggestion)
+
+    def action_set_context(self, context_size):
+        global CONTEXT_SIZE
+        try:
+            n = int(context_size)
+            CONTEXT_SIZE = n
+        except ValueError:
+            print('\nContext size has to be an integer')
 
     def action_print_annotations(self, search_term=None):
         if search_term is None:
@@ -298,12 +308,9 @@ class Annotator(object):
         (to avoid hasty typos) and if it occurs in Wikipedia."""
         if len(self.action) > 1:
             url = 'https://en.wikipedia.org/wiki/%s' % self.action
-            response = request.urlopen(url)
-            try:
-                if response.getcode() == 200:
-                    return True
-            except:
-                pass
+            response = requests.get(url)
+            if response.status_code == 200:
+                return True
         return False
     
 
