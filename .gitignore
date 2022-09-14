@@ -1,5 +1,5 @@
 .DS_Store
 *~
 venv
-data*.tab
+data/.tab
 backup.sh

@@ -16,114 +16,141 @@ Location of source files and NER annotations:
 - source files: https://github.com/clamsproject/wgbh-collaboration
 - annotations: https://github.com/clamsproject/clams-aapb-annotations
 
-TODO to make this a working tool:
-- add help function
-- add backups
-- add suggestions if entity was annotated before
-- use 'c' as a command to copy the link suggestion
-- connect annotations to the data
-- allow more ways to browse annotations
-- add way to fix mistakes
-- create one output file per input file
-- use 'w' to print wikipedia link
-- do we need to worry about languages?
-- add a validation step where we check wether the link actually exists
-- allow entering "Jim Lehrer" instead of "Jim_Lehrer"
-  (for validation we may need to use a different version as for saving)
+These repositories should be cloned locally. Set the variables SOURCES_REPO and
+ANNOTATIONS_REPO below to reflect the path to the local clone.
+
+TODO: add backups
+TODO: add way to fix mistakes
+TODO: create one output file per input file
+TODO: do we need to worry about languages?
+TODO: allow entering "Jim Lehrer" instead of "Jim_Lehrer"
+      (for validation we may need to use a different version as for saving)
+TODO: change the confusing way the code deals with the different extensions
+      (for sources we have .txt and for annotations we have.ann)
 
 """
 
 import os
+import copy
 import pathlib
 import collections
+import datetime
 import requests
 
 
+# Locations of the source and annotation repositories, edit these as needed
 SOURCES_REPO = '../../wgbh-collaboration/'
 ANNOTATIONS_REPO = '../../clams-aapb-annotations/'
 
+# No edits needed below this line
+
 SOURCES = "%s/21" % SOURCES_REPO
 ANNOTATIONS = '%s/uploads/2022-jun-namedentity/annotations/' % ANNOTATIONS_REPO
-TOOL_OUTPUT = 'data.tab'
+TOOL_OUTPUT = 'data/annotations.tab'
 
 CONTEXT_SIZE = 40
+PROMPT = 'ela>'
 
 
-class CorpusEntities(object):
+class Corpus(object):
+
+    """A corpus which contains all files, it includes both the primary sources
+    and the annotations.
+
+    annotations_folder  -  location of the annotations
+    sources_folder      -  location of the sources
+    files               -  { filename => File }
+    sources             -  { filename => file-content (str) }
+
+    """
 
     def __init__(self, annotations_folder, sources_folder):
         self.annotations_folder = annotations_folder
         self.sources_folder = sources_folder
-        self.data = []
-        self.idx = {}
+        self.files = {}
         self.sources = {}
-        for fname in os.listdir(sources_folder):
+        self._read_sources()
+        self._read_annotations()
+        self._add_dummy_file()
+
+    def _read_sources(self):
+        """Read all the primary sources. They are first stored on the Corpus
+        instance and then later also imported into all File instances."""
+        for fname in os.listdir(self.sources_folder):
             if len(fname) == 39:
                 basename = os.path.splitext(fname)[0]
-                fpath = os.path.join(sources_folder, fname)
+                fpath = os.path.join(self.sources_folder, fname)
                 with open(fpath) as fh:
                     self.sources[basename] = fh.read()
-        for fname in os.listdir(annotations_folder):
-            fpath = os.path.join(annotations_folder, fname)
-            file_annos = FileEntities(fname, fpath)
-            self.data.append(file_annos)
-            self.idx[fname] = file_annos
 
-    def __getitem__(self, i):
-        return self.data[i]
+    def _read_annotations(self):
+        """Read the annotations over the primary sources. This is for the named
+        entity annotations that are input to the linking process. Annotations
+        are stored in File instance, which also get the source text added."""
+        for fname in sorted(os.listdir(self.annotations_folder)):
+            fpath = os.path.join(self.annotations_folder, fname)
+            corpus_file = File(fname, fpath)
+            basename = os.path.splitext(fname)[0]
+            corpus_file.source = self.sources.get(basename, '')
+            self.files[fname] = corpus_file
+
+    def _add_dummy_file(self):
+        first_file_name = 'cpb-aacip-507-154dn40c26-transcript.ann'
+        dummy_file_name = 'cpb-aacip-000-0000000000-transcript.ann'
+        first_file = self.files.get(first_file_name)
+        dummy_file = File(dummy_file_name)
+        # print('---', first_file)
+        # print('---', dummy_file)
+        for entity_text, entity_type in first_file.data.items():
+            if len(entity_type) > 5:
+                dummy_file.source = first_file.source
+                dummy_entity = copy.deepcopy(entity_type)
+                dummy_entity.file_name = dummy_file_name
+                for token in dummy_entity:
+                    token.file_name = dummy_file_name
+                dummy_file.data[entity_type.text()] = dummy_entity
+        self.files[dummy_file_name] = dummy_file
+
+    def get_files(self):
+        return [self.files[file_name] for file_name in sorted(self.files)]
 
     def next(self):
-        # TODO: this is rather brute force, keep a pointer
-        for file_entities in self.data:
-            for type_entity in file_entities.data.values():
+        # TODO: this is rather brute force, maybe keep a pointer
+        for corpus_file in self.get_files():
+            for type_entity in corpus_file.data.values():
                 if type_entity.link is None:
                     return type_entity
 
-    def add_annotation(self, annotation):
-        file_entities = self.idx.get(annotation[0])
-        entity = file_entities.data.get(annotation[1])
-        entity.link = annotation[-1]
 
-    def suggest_link(self, entity_text):
-        suggestions = []
-        for file_entities in self:
-            suggestion = file_entities.data.get(entity_text)
-            if suggestion is not None and suggestion.link is not None:
-                suggestions.append(suggestion.link)
-        c = collections.Counter(suggestions)
-        try:
-            return c.most_common()[0][0]
-        except IndexError:
-            return None
+class File(object):
 
-    def get_context(self, entity):
-        basename = os.path.splitext(entity.file_name)[0]
-        p1 = entity.start
-        p2 = entity.end
-        text = self.sources.get(basename, '')
-        left = text[p1-CONTEXT_SIZE:p1]
-        right = text[p2:p2+CONTEXT_SIZE]
-        return (left, right)
-
-
-class FileEntities(object):
-
-    def __init__(self, file_name, file_path):
+    def __init__(self, file_name, file_path=None):
         self.name = file_name
         self.path = file_path
+        self.source = None
         self.data = {}
-        for line in open(file_path):
-            entity = Entity(file_name, line)
-            self.data.setdefault(entity.text, EntityType(file_name)).append(entity)
+        if file_path is not None:
+            for line in open(file_path):
+                entity = Entity(file_name, line)
+                self.data.setdefault(entity.text, EntityType(file_name)).append(entity)
 
     def __str__(self):
-        return "<FileEntities %s>" % len(self.data)
+        return "<File %s %s>" % (self.name, len(self.data))
 
     def entity_type_count(self):
         return len(self.data)
         
     def entity_token_count(self):
         return sum([len(x) for x in self.data.values()])
+
+    def get_context(self, entity):
+        def normalize(s: str):
+            return s.replace('\n', ' ')
+        p1 = entity.start
+        p2 = entity.end
+        left = normalize(self.source[p1-CONTEXT_SIZE:p1])
+        right = normalize(self.source[p2:p2+CONTEXT_SIZE])
+        return left, right
 
     def status(self):
         done_types = 0
@@ -134,7 +161,7 @@ class FileEntities(object):
                 done_tokens += len(entity_type)
         percent_done_types = (done_types * 100 / self.entity_type_count())
         percent_done_tokens = (done_tokens * 100 / self.entity_token_count())
-        return (self.name, percent_done_types, percent_done_tokens)
+        return self.name, percent_done_types, percent_done_tokens
 
     def pp(self):
         print(self.name)
@@ -170,6 +197,11 @@ class EntityType(object):
     def entity_class(self):
         return self.tokens[0].entity_class
 
+    def pp(self):
+        print(self)
+        for token in self[:3]:
+            print('   ', token)
+
         
 class Entity(object):
 
@@ -192,44 +224,61 @@ class Entity(object):
 
 class Annotator(object):
 
-    def __init__(self, corpus_entities, annotations_file):
-        self.corpus_entities = corpus_entities
+    def __init__(self, corpus: Corpus, annotations_file: str):
+        self.corpus = corpus
         self.annotations_file = annotations_file
         self.annotations = []
+        self.annotation_id = 0
         self.next_entity = None
-        self.read_annotations()
+        self.action = None
+        self.link_suggestion = None
+        self._load_annotations()
 
-    def read_annotations(self):
+    def _load_annotations(self):
         pathlib.Path(self.annotations_file).touch(exist_ok=True)
         with open(self.annotations_file) as fh:
             for line in fh:
                 # TODO: maybe do a sanity check here
                 annotation = line.strip().split('\t')
-                self.annotations.append(annotation)
-                self.corpus_entities.add_annotation(annotation)
+                if len(annotation) != 7:
+                    print('WARNING: unexpected annotation')
+                    continue
+                self.add_annotation(annotation)
+
+    def add_annotation(self, annotation: list):
+        self.annotation_id = max(self.annotation_id, int(annotation[0]))
+        self.annotations.append(annotation)
+        file_name, entity, link = annotation[2], annotation[3], annotation[6]
+        corpus_file = self.corpus.files.get(file_name)
+        corpus_file.data.get(entity).link = link
 
     def status(self):
-        print("\nStatus on %s\n" % self.corpus_entities.annotations_folder)
-        for file_entities in self.corpus_entities:
+        print("\nStatus on %s\n" % self.corpus.annotations_folder)
+        # for file_entities in self.corpus_entities:
+        for file_entities in self.corpus.get_files():
             (name, percent_done_types, percent_done_tokens) = file_entities.status()
-            #print('    %s %d %d' % (name, percent_done_types, percent_done_tokens))
-            print('    %s %3d%%' % (name, percent_done_types))
+            print('    %s %4d %3d%%' % (name,
+                                        file_entities.entity_type_count(),
+                                        percent_done_types))
 
     def loop(self):
         self.action = None
         self.link_suggestion = None
         while True:
-            #print("action=[%s]\n" % self.action)
+            # print("action=[%s]\n" % self.action)
             if self.action in ('q', 'quit', 'exit'):
                 break
             elif self.action in ('?', 'h', 'help'):
-                self.action_help()
+                print_help()
             elif self.action in ('s', 'status'):
                 self.status()
             elif self.action in ('', 'n'):
                 self.action_print_next()
             elif self.action == 'a':
                 self.action_print_annotations()
+            elif self.action == 'y':
+                self.action_accept_hint()
+                self.action_print_next()
             elif self.action is not None and self.action.startswith('a '):
                 self.action_print_annotations(self.action[2:])
             elif self.action is not None and self.action.startswith('c '):
@@ -239,36 +288,47 @@ class Annotator(object):
                 self.action_print_next()
             else:
                 self.status()
-            self.action = input("\n>>> ")
+            self.action = input("\n%s " % PROMPT)
+
+    def action_accept_hint(self):
+        if self.next_entity is not None and self.link_suggestion is not None:
+            self.next_entity.link = self.link_suggestion
+            self.add_link(self.link_suggestion)
 
     def action_store_link(self):
         if self.next_entity is not None:
             if self.validate_link():
                 self.next_entity.link = self.action
-                # TODO: add all the extent identifiers?
-                # TODO: add timestamp?
-                annotation = (self.next_entity.file_name,
-                              self.next_entity.text(),
-                              self.next_entity.entity_class(),
-                              str(len(self.next_entity)),
-                              self.action)
-                self.annotations.append(annotation)
-                with open(self.annotations_file, 'a') as fh:
-                    fh.write('%s\n' % '\t'.join(annotation))
+                self.add_link(self.action)
             else:
                 print("\n%sWARNING: '%s' is not an entry in Wikipedia.%s"
                       % (RED, self.action, END))
 
+    def add_link(self, link):
+        self.annotation_id += 1
+        annotation = [
+            str(self.annotation_id),
+            timestamp(),
+            self.next_entity.file_name,
+            self.next_entity.text(),
+            self.next_entity.entity_class(),
+            str(len(self.next_entity)),
+            link]
+        self.annotations.append(annotation)
+        with open(self.annotations_file, 'a') as fh:
+            fh.write('%s\n' % '\t'.join([str(a) for a in annotation]))
+
     def action_print_next(self):
-        self.next_entity = self.corpus_entities.next()
+        self.next_entity = self.corpus.next()
         text = self.next_entity.text()
         entity_class = self.next_entity.entity_class()
         print("\n%s[%s] (%s)%s\n" % (BOLD, text, entity_class, END))
         for entity in self.next_entity:
-            left, right = self.corpus_entities.get_context(entity)
+            corpus_file = self.corpus.files.get(entity.file_name)
+            left, right = corpus_file.get_context(entity)
             left = (CONTEXT_SIZE-len(left)) * ' ' + left
             print('    %s[%s%s%s]%s' % (left, BLUE, text, END, right))
-        self.link_suggestion = self.corpus_entities.suggest_link(text)
+        self.link_suggestion = self.suggest_link(text)
         if self.link_suggestion:
             print('\nLink suggestion: %s' % self.link_suggestion)
 
@@ -278,41 +338,62 @@ class Annotator(object):
             n = int(context_size)
             CONTEXT_SIZE = n
         except ValueError:
-            print('\nContext size has to be an integer')
+            print('\nWARNING: context size has to be an integer, ignoring command')
 
     def action_print_annotations(self, search_term=None):
+
+        def print_annotation(annotation):
+            identifier = annotation[0]
+            fname = "%s:%s" % (annotation[2][:-15], annotation[5])
+            e_class, e_text, link = annotation[4], annotation[3], annotation[6]
+            print("%4s %-30s %-15s  -  %-33s  ==>  %s"
+                  % (identifier, fname, e_class, e_text, link))
+
         if search_term is None:
             print("\nCurrent annotations:\n")
             for annotation in self.annotations:
-                print(annotation)
+                print_annotation(annotation)
         else:
             print("\nAnnotations matching '%s':\n" % search_term)
             for annotation in self.annotations:
-                if search_term.lower() in annotation[1].lower():
-                    print(annotation)
-
-    def action_help(self):
-        print('\nAvailable commands:\n')
-        print('? | h | help     -  this help message')
-        print('q | quit | exit  -  quit the tool')
-        print('s | status       -  show annotation status')
-        print('n | <return>     -  show next entity to annotate')
-        print('a                -  show list of all annotations')
-        print('a <search-term>  -  show list of annotations that match <search-term>')
-        print('\nCommands are typed in at the >>> prompt. If the prompt follows a print out')
-        print('of an entity in context and a non-command is entered then the string that')
-        print('was typed in is considered to be the entity link.')
+                if search_term.lower() in annotation[3].lower():
+                    print_annotation(annotation)
 
     def validate_link(self):
-        """A link entered by the user is okay if it is longer than one character
-        (to avoid hasty typos) and if it occurs in Wikipedia."""
+        """A link entered by the user is okay if it is either '-' or longer than
+        one character (to avoid hasty typos) and if occurs in Wikipedia."""
+        if self.action == '-':
+            return True
         if len(self.action) > 1:
             url = 'https://en.wikipedia.org/wiki/%s' % self.action
             response = requests.get(url)
             if response.status_code == 200:
                 return True
         return False
-    
+
+    def suggest_link(self, entity_text):
+        suggestions = []
+        for corpus_file in self.corpus.get_files():
+            suggestion = corpus_file.data.get(entity_text)
+            if suggestion is not None and suggestion.link is not None:
+                suggestions.append(suggestion.link)
+        c = collections.Counter(suggestions)
+        try:
+            return c.most_common()[0][0]
+        except IndexError:
+            return None
+
+
+def timestamp():
+    dt = datetime.datetime.now()
+    return "%04d-%02d-%02d %02d:%02d:%02d" % (dt.year, dt.month, dt.day,
+                                              dt.hour, dt.minute, dt.second)
+
+
+def print_help():
+    with open('help.txt') as fh:
+        print("\n%s" % fh.read().strip())
+
 
 BOLD = '\u001b[1m'
 END = '\u001b[0m'
@@ -322,4 +403,4 @@ RED = '\u001b[31m'
 
 if __name__ == '__main__':
 
-    Annotator(CorpusEntities(ANNOTATIONS, SOURCES), TOOL_OUTPUT).loop()
+    Annotator(Corpus(ANNOTATIONS, SOURCES), TOOL_OUTPUT).loop()
