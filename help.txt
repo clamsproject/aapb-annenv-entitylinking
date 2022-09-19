@@ -1,15 +1,16 @@
 
 Available commands:
 
-    ? | h | help      -  this help message
-    q | quit | exit   -  quit the tool
-    s | status        -  show annotation status
-    n | <return>      -  show next entity to annotate
-    y                 -  accept the hint that was suggested
-    a                 -  show all annotations
-    a <search-term>   -  show annotations that match <search-term>
-    c <context_size>  -  set the size of the context, default is 40
- 
-Commands are typed in at the tool's prompt. If the prompt follows a
-print out of an entity in context and a non-command is entered then the
-string that was typed in is considered to be the entity link.
+    ? | h | help       -  this help message
+    q | quit | exit    -  quit the tool
+    s | status         -  show annotation status
+    n | <return>       -  show next entity to annotate
+    l <link-name>      -  store <link-name> as the link for the entity
+    y                  -  accept the hint that was suggested
+    f <n> <link-name>  -  change link of entity with identifier <n>
+    a                  -  show all annotations
+    a <search-term>    -  show annotations that match <search-term>
+    c <context_size>   -  set the size of the context, default is 40
+    b | backup         -  create a time-stamped backup in the data directory
+
+See the readme file for some more verbose instructions.
