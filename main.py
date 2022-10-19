@@ -9,26 +9,29 @@ $ python main.py [--debug] [--demo]
 With debugging the tool works the same but will print messages to the
 standard output. In demo mode a small file is added for demo purposes.
 
-Assumes:
+Assumptions:
 - all annotations are extents
 - no annotations with fragments
 
-Links are made to Wikipedia at https://en.wikipedia.org/wiki/Main_Page, for
-example: https://en.wikipedia.org/wiki/Jim_Lehrer. But we only need to enter
-Jim_Lehrer, not the whole string.
+This tools presents named entities one by one, the annotator has no say on the
+order that the entities are presented in.
+
+Any URL can be handed in as a link, but the assumption is that links are made
+to Wikipedia at https://en.wikipedia.org/wiki/Main_Page, for example to
+https://en.wikipedia.org/wiki/Jim_Lehrer. If a link is to the English Wikipedia
+then instead of the full link we can just enter "Jim_Lehrer" or "Jim Lehrer"
+and it will be automatically expanded to the full Wikipedia URL.
 
 Location of source files and NER annotations:
 - source files: https://github.com/clamsproject/wgbh-collaboration
 - annotations: https://github.com/clamsproject/clams-aapb-annotations
 
 These repositories should be cloned locally. Set the variables SOURCES and
-ANNOTATIONS below to reflect the paths into the local clones.
+ENTITIES below to reflect the paths into the local clones.
 
 """
 
-# TODO: do we need to worry about languages?
-# TODO: allow entering "Jim Lehrer" instead of "Jim_Lehrer"
-#       (for validation we may need to use a different version as for saving)
+# TODO: should not assume that all annotations are extents
 # TODO: change the confusing way the code deals with the different extensions
 #       (for sources we have .txt and for annotations we have.ann)
 
@@ -50,13 +53,17 @@ ENTITIES = '../../clams-aapb-annotations/uploads/2022-jun-namedentity/annotation
 
 # No edits should be needed below this line
 
-ANNOTATIONS = 'data/annotations.tab'
-ANNOTATIONS_BACKUP = 'data/annotations-%s.tab'
 
-CONTEXT_SIZE = 40
-PROMPT = 'bela>'
-DEBUG = False
-DEMO = False
+class Config(object):
+    """Contains class variables with the run-time configuration settings."""
+    DEBUG = False
+    DEMO = False
+    ANNOTATIONS = 'data/annotations.tab'
+    ANNOTATIONS_BACKUP = 'data/annotations-%s.tab'
+    CONTEXT_SIZE = 40
+    PROMPT = 'ela>'
+    URL_PREFIXES = ('http://', 'https://')
+    WIKIPEDIA_LINK = 'https://en.wikipedia.org/wiki/%s'
 
 
 class Warnings(object):
@@ -113,7 +120,7 @@ class Corpus(object):
         """Create a dummy file from an existing file, using only the most common
         entities from the existing file. Then add it to the beginning of the file
         list. This is for demonstrating the tool."""
-        if DEMO:
+        if Config.DEMO:
             first_file_name = 'cpb-aacip-507-154dn40c26-transcript.ann'
             dummy_file_name = 'cpb-aacip-000-0000000000-transcript.ann'
             first_file = self.files.get(first_file_name)
@@ -136,7 +143,6 @@ class Corpus(object):
 
     def next(self):
         """Return the first un-annotated entity."""
-        # TODO: this is rather brute force, maybe keep a pointer
         for corpus_file in self.get_files():
             for type_entity in corpus_file.data.values():
                 if type_entity.link is None:
@@ -181,12 +187,13 @@ class File(object):
             return s.replace('\n', ' ')
         p1 = entity.start
         p2 = entity.end
-        left = normalize(self.source[p1-CONTEXT_SIZE:p1])
-        right = normalize(self.source[p2:p2+CONTEXT_SIZE])
+        left = normalize(self.source[p1-Config.CONTEXT_SIZE:p1])
+        right = normalize(self.source[p2:p2+Config.CONTEXT_SIZE])
         return left, right
 
     def status(self) -> tuple:
-        """Return the percentages done for entity types and tokens."""
+        """Return the total number of entity types, the number of entity types
+        done and the percentage done for entity types."""
         done_types = 0
         done_tokens = 0
         for entity_type in self.data.values():
@@ -194,8 +201,7 @@ class File(object):
                 done_types += 1
                 done_tokens += len(entity_type)
         percent_done_types = (done_types * 100 / self.entity_type_count())
-        percent_done_tokens = (done_tokens * 100 / self.entity_token_count())
-        return percent_done_types, percent_done_tokens
+        return self.entity_type_count(), done_types, percent_done_types
 
     def pp(self):
         print(self.name)
@@ -308,8 +314,7 @@ class LinkAnnotation(object):
 
     def __init__(self, line):
         """Always initialize from a line with tab-separated fields."""
-        # TODO: maybe do a sanity check here
-        fields = line.strip().split('\t')
+        fields = line.strip('\n').strip(' ').split('\t')
         self.is_valid = True if len(fields) == 7 else False
         self.identifier = int(fields[0])
         self.timestamp = fields[1]
@@ -323,12 +328,16 @@ class LinkAnnotation(object):
         return "<LinkAnnotation %s %s '%s' '%s'>" \
                % (self.identifier, self.file_name, self.text, self.link)
 
-    def fields(self):
+    def is_dummy_annotation(self) -> bool:
+        """Returns True if this file was created as a dummy for the demo mode."""
+        return '000-0000000000' in self.file_name
+
+    def fields(self) -> tuple:
         """Returns the values of all instance variables in a fixed order."""
         return (self.identifier, self.timestamp, self.file_name, self.text,
                 self.entity_class, self.tokens, self.link)
 
-    def as_pretty_line(self):
+    def as_pretty_line(self) -> str:
         """Returns a line for pretty printing in the tool."""
         identifier = self.identifier
         fname = "%s:%s" % (self.file_name[:-15], self.tokens)
@@ -336,7 +345,7 @@ class LinkAnnotation(object):
         return ("%4s %-30s %-17s  -  %-33s  ==>  %s"
                 % (identifier, fname, e_class, e_text, link))
 
-    def as_tab_separated_line(self):
+    def as_tab_separated_line(self) -> str:
         """Returns a line that can be used for storage in the annotation file."""
         return '%s' % '\t'.join([str(f) for f in self.fields()])
 
@@ -366,6 +375,24 @@ class LinkAnnotations(object):
     def __getitem__(self, item):
         return self.annotations[item]
 
+    @classmethod
+    def is_link(cls, link: str) -> bool:
+        """Return True if the link string starts with 'http://' or 'https://',
+        return False otherwise."""
+        for prefix in Config.URL_PREFIXES:
+            if link.startswith(prefix):
+                return True
+        return False
+
+    @classmethod
+    def normalize_link(cls, link: str) -> str:
+        """Replace spaces with underscores and expand to a full Wikipedia URL
+        if needed. If no link was given then return the emtpy string."""
+        link = link.strip().replace(' ', '_')
+        if not link:
+            return ''
+        return link if cls.is_link(link) else Config.WIKIPEDIA_LINK % link
+
     def _load_annotations(self):
         pathlib.Path(self.annotations_file).touch(exist_ok=True)
         with open(self.annotations_file) as fh:
@@ -377,6 +404,8 @@ class LinkAnnotations(object):
     def add_annotation(self, annotation: LinkAnnotation):
         """Add a link annotation to the list of annotations and to the entity
         that it is created for."""
+        if not Config.DEMO and annotation.is_dummy_annotation():
+            return
         self.annotation_id = max(self.annotation_id, annotation.identifier)
         self.annotations.append(annotation)
         corpus_file = self.corpus.files.get(annotation.file_name)
@@ -396,7 +425,7 @@ class LinkAnnotations(object):
         annotation_obj = LinkAnnotation(annotation_str)
         self.save_annotation(annotation_obj)
 
-    def create_link(self, link, entity=None, annotation=None):
+    def create_link(self, link, entity=None, annotation=None) -> list:
         """Create a new link annotation. If an existing annotation is handed in
         we use that to set some of the new annotation's values, otherwise we use
         the information from the current entity."""
@@ -424,7 +453,7 @@ class LinkAnnotations(object):
 
     def backup(self):
         source_file = self.annotations_file
-        target_file = ANNOTATIONS_BACKUP % timestamp().replace(' ', ':')
+        target_file = Config.ANNOTATIONS_BACKUP % timestamp().replace(' ', ':')
         print('\nCopying %s to %s' % (source_file, target_file))
         shutil.copyfile(source_file, target_file)
 
@@ -476,14 +505,13 @@ class Annotator(object):
                 self.action_print_annotations(self.action[2:])
             elif self.action.startswith('c '):
                 self.action_set_context(self.action[2:])
-            elif self.action == 'l':
-                self.action_store_link('-')
-            elif self.action.startswith('l '):
-                self.action_store_link(self.action[2:])
+            elif self.action == 'l' or self.action.startswith('l '):
+                link = '-' if self.action == 'l' else self.action[2:].strip()
+                self.action_store_link(link)
             else:
                 self.print_warning(Warnings.UNKNOWN_COMMAND)
             self.debug_loop('END OF LOOP, BEFORE PROMPT:')
-            self.action = input("\n%s " % PROMPT).strip()
+            self.action = input("\n%s " % Config.PROMPT).strip()
 
     def action_backup(self):
         self.annotations.backup()
@@ -499,7 +527,8 @@ class Annotator(object):
             self.annotations.add_link(self.next_entity, self.link_suggestion)
             self.action_print_next()
 
-    def action_store_link(self, link):
+    def action_store_link(self, link: str):
+        link = LinkAnnotations.normalize_link(link)
         if self.next_entity is not None:
             if self.validate_link(link):
                 self.next_entity.link = link
@@ -507,16 +536,16 @@ class Annotator(object):
             else:
                 self.print_warning(Warnings.NOT_IN_WIKIPEDIA % link)
             self.action_print_next()
-            if DEBUG:
+            if Config.DEBUG:
                 for a in self.annotations[-5:]:
                     print(a)
         else:
             self.print_warning(Warnings.NO_ENTITY)
 
-    def action_fix_link(self, identifier_and_link):
-        identifier, *link = identifier_and_link.split()
+    def action_fix_link(self, identifier_and_link: str):
+        identifier, link = identifier_and_link.split(' ', 1)
         identifier = int(identifier)
-        link = ' '.join(link)
+        link = LinkAnnotations.normalize_link(link)
         if self.validate_link(link):
             old_annotation = self.annotations.get_annotation(identifier)
             new_annotation = self.annotations.create_link(link, annotation=old_annotation)
@@ -533,7 +562,7 @@ class Annotator(object):
         for entity in self.next_entity:
             corpus_file = self.corpus.files.get(entity.file_name)
             left, right = corpus_file.get_context(entity)
-            left = (CONTEXT_SIZE-len(left)) * ' ' + left
+            left = (Config.CONTEXT_SIZE-len(left)) * ' ' + left
             print('    %s[%s%s%s]%s' % (left, ANSI.BLUE, text, ANSI.END, right))
         self.link_suggestion = self.suggest_link(text)
         if self.link_suggestion:
@@ -552,22 +581,19 @@ class Annotator(object):
 
     @staticmethod
     def action_set_context(context_size: str):
-        global CONTEXT_SIZE
         try:
             n = int(context_size)
-            CONTEXT_SIZE = n
+            Config.CONTEXT_SIZE = n
         except ValueError:
             print('\nWARNING: context size has to be an integer, ignoring command')
 
     @staticmethod
     def validate_link(link: str):
-        """A link entered by the user is okay if it is either '-' or it is
-        longer than one character (to avoid hasty typos) and it occurs in
-        Wikipedia."""
-        if link == '-':
+        """A link entered by the user is okay if it is either an empty link or
+        it exists as a URL."""
+        if not link:
             return True
-        url = 'https://en.wikipedia.org/wiki/%s' % link
-        return True if requests.get(url).status_code == 200 else False
+        return True if requests.get(link).status_code == 200 else False
 
     def suggest_link(self, entity_text: str):
         suggestions = []
@@ -583,15 +609,20 @@ class Annotator(object):
 
     def status(self):
         print("\nStatus on %s\n" % self.corpus.annotations_folder)
-        # for file_entities in self.corpus_entities:
+        corpus_types = 0
+        corpus_types_done = 0
         for corpus_file in self.corpus.get_files():
-            (percent_done_types, percent_done_tokens) = corpus_file.status()
-            print('    %s %4d %3d%%' % (corpus_file.name,
-                                        corpus_file.entity_type_count(),
-                                        percent_done_types))
+            (total_types, types_done, percent_done_types) = corpus_file.status()
+            corpus_types += total_types
+            corpus_types_done += types_done
+            print('    %s  %4d %3d%%' % (corpus_file.name,
+                                         corpus_file.entity_type_count(),
+                                         round(percent_done_types)))
+        corpus_percentage_done = round((corpus_types_done/corpus_types) * 100)
+        print('    %-39s  %4d %3d%%' % ('', corpus_types, corpus_percentage_done))
 
-    def debug_loop(self, message):
-        if DEBUG:
+    def debug_loop(self, message: str):
+        if Config.DEBUG:
             print("\n%s" % message)
             print("    self.action           =  %s" % self.action)
             print("    self.link_suggestion  =  %s" % self.link_suggestion)
@@ -626,7 +657,7 @@ if __name__ == '__main__':
 
     args = sys.argv[1:]
     if '--debug' in args:
-        DEBUG = True
+        Config.DEBUG = True
     if '--demo' in args:
-        DEMO = True
-    Annotator(Corpus(ENTITIES, SOURCES), ANNOTATIONS).loop()
+        Config.DEMO = True
+    Annotator(Corpus(ENTITIES, SOURCES), Config.ANNOTATIONS).loop()
