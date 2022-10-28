@@ -39,26 +39,14 @@ ENTITIES below to reflect the paths into the local clones.
 
 
 import sys
-import collections
-
-import requests
 
 import config
-from utils import ANSI
+from utils import ANSI, validate_link
 from model import Corpus, LinkAnnotation, LinkAnnotations
 
 # Locations of the source and entity annotation repositories, edit as needed
 SOURCES = '../../wgbh-collaboration/21'
 ENTITIES = '../../clams-aapb-annotations/uploads/2022-jun-namedentity/annotations'
-
-# No edits should be needed below this line
-
-
-class Warnings(object):
-    NO_ENTITY = 'no entity was selected, type "n" to select next entity'
-    UNKNOWN_COMMAND = 'unknown command, type "h" to see available commands'
-    NO_LINK_SUGGESTION = 'there was no link suggestion'
-    NOT_IN_WIKIPEDIA = "'%s' is not an entry in Wikipedia"
 
 
 class Annotator(object):
@@ -112,7 +100,7 @@ class Annotator(object):
                 link = '-' if self.action == 'l' else self.action[2:].strip()
                 self.action_store_link(link)
             else:
-                self.print_warning(Warnings.UNKNOWN_COMMAND)
+                self.print_warning(config.Warnings.UNKNOWN_COMMAND)
             self.debug_loop('END OF LOOP, BEFORE PROMPT:')
             self.action = input("\n%s " % config.PROMPT).strip()
 
@@ -121,9 +109,9 @@ class Annotator(object):
 
     def action_accept_hint(self):
         if self.next_entity is None:
-            self.print_warning(Warnings.NO_ENTITY)
+            self.print_warning(config.Warnings.NO_ENTITY)
         elif self.link_suggestion is None:
-            self.print_warning(Warnings.NO_LINK_SUGGESTION)
+            self.print_warning(config.Warnings.NO_LINK_SUGGESTION)
             self.action_print_next()
         else:
             self.next_entity.link = self.link_suggestion
@@ -133,29 +121,29 @@ class Annotator(object):
     def action_store_link(self, link: str):
         link = LinkAnnotations.normalize_link(link)
         if self.next_entity is not None:
-            if self.validate_link(link):
+            if validate_link(link):
                 self.next_entity.link = link
                 self.annotations.add_link(self.next_entity, link)
             else:
-                self.print_warning(Warnings.NOT_IN_WIKIPEDIA % link)
+                self.print_warning(config.Warnings.NON_EXISTING_URL % link)
             self.action_print_next()
             if config.DEBUG:
                 for a in self.annotations[-5:]:
                     print(a)
         else:
-            self.print_warning(Warnings.NO_ENTITY)
+            self.print_warning(config.Warnings.NO_ENTITY)
 
     def action_fix_link(self, identifier_and_link: str):
         identifier, link = identifier_and_link.split(' ', 1)
         identifier = int(identifier)
         link = LinkAnnotations.normalize_link(link)
-        if self.validate_link(link):
+        if validate_link(link):
             old_annotation = self.annotations.get_annotation(identifier)
             new_annotation = self.annotations.create_link(link, annotation=old_annotation)
             new_annotation = LinkAnnotation('\t'.join([str(f) for f in new_annotation]))
             self.annotations.save_annotation(new_annotation)
         else:
-            self.print_warning(Warnings.NOT_IN_WIKIPEDIA % link)
+            self.print_warning(config.Warnings.NON_EXISTING_URL % link)
 
     def action_print_next(self):
         self.next_entity = self.corpus.next()
@@ -167,7 +155,7 @@ class Annotator(object):
             left, right = corpus_file.get_context(entity)
             left = (config.CONTEXT_SIZE-len(left)) * ' ' + left
             print('    %s[%s%s%s]%s' % (left, ANSI.BLUE, text, ANSI.END, right))
-        self.link_suggestion = self.suggest_link(text)
+        self.link_suggestion = self.corpus.suggest_link(text)
         if self.link_suggestion:
             print('\nLink suggestion: %s' % self.link_suggestion)
 
@@ -190,39 +178,12 @@ class Annotator(object):
         except ValueError:
             print('\nWARNING: context size has to be an integer, ignoring command')
 
-    @staticmethod
-    def validate_link(link: str):
-        """A link entered by the user is okay if it is either an empty link or
-        it exists as a URL."""
-        if not link:
-            return True
-        return True if requests.get(link).status_code == 200 else False
-
-    def suggest_link(self, entity_text: str):
-        suggestions = []
-        for corpus_file in self.corpus.get_files():
-            suggestion = corpus_file.data.get(entity_text)
-            if suggestion is not None and suggestion.link is not None:
-                suggestions.append(suggestion.link)
-        c = collections.Counter(suggestions)
-        try:
-            return c.most_common()[0][0]
-        except IndexError:
-            return None
-
     def status(self):
         print("\nStatus on %s\n" % self.corpus.annotations_folder)
-        corpus_types = 0
-        corpus_types_done = 0
-        for corpus_file in self.corpus.get_files():
-            (total_types, types_done, percent_done_types) = corpus_file.status()
-            corpus_types += total_types
-            corpus_types_done += types_done
-            print('    %s  %4d %3d%%' % (corpus_file.name,
-                                         corpus_file.entity_type_count(),
-                                         round(percent_done_types)))
-        corpus_percentage_done = round((corpus_types_done/corpus_types) * 100)
-        print('    %-39s  %4d %3d%%' % ('', corpus_types, corpus_percentage_done))
+        corpus_types, percentage_done, results_per_file = self.corpus.status()
+        for fname, entities, done in results_per_file:
+            print('    %s  %4d %3d%%' % (fname, entities, done))
+        print('    %-39s  %4d %3d%%' % ('', corpus_types, percentage_done))
 
     def debug_loop(self, message: str):
         if config.DEBUG:

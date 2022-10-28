@@ -10,12 +10,16 @@ import os
 import copy
 import shutil
 import pathlib
+import collections
+from io import StringIO
 
 import config
+import utils
 from utils import timestamp
 
 
 class Corpus(object):
+
     """A corpus containing all files, it includes both the primary sources
     and the annotations.
 
@@ -34,7 +38,7 @@ class Corpus(object):
         self.sources = {}
         self._read_sources()
         self._read_annotations()
-        self._add_dummy_file()
+        self._add_dummy_data()
 
     def _read_sources(self):
         """Read all the primary sources. They are first stored on the Corpus
@@ -57,30 +61,55 @@ class Corpus(object):
             corpus_file.source = self.sources.get(basename, '')
             self.files[fname] = corpus_file
 
-    def _add_dummy_file(self):
+    def _add_dummy_data(self):
         """Create a dummy file from an existing file, using only the most common
         entities from the existing file. Then add it to the beginning of the file
         list. This is for demonstrating the tool."""
+        def add_entity(dummy_file, source_file, etype):
+            dummy_file.source = source_file.source
+            dummy_entity = copy.deepcopy(etype)
+            dummy_entity.file_name = dummy_file.name
+            for token in dummy_entity:
+                token.file_name = dummy_file.name
+            dummy_file.data[entity_type.text()] = dummy_entity
         if config.DEMO:
-            first_file_name = 'cpb-aacip-507-154dn40c26-transcript.ann'
-            dummy_file_name = 'cpb-aacip-000-0000000000-transcript.ann'
-            first_file = self.files.get(first_file_name)
-            dummy_file = File(dummy_file_name)
-            # print('---', first_file)
-            # print('---', dummy_file)
+            file_names = self.get_file_names()
+            dummy1_file_name = 'cpb-aacip-000-0000000001-transcript.ann'
+            dummy2_file_name = 'cpb-aacip-000-0000000002-transcript.ann'
+            first_file = self.files.get(file_names[0])
+            dummy1_file = File(dummy1_file_name)
+            dummy2_file = File(dummy2_file_name)
             for entity_text, entity_type in first_file.data.items():
+                if not len(entity_type) > 2:
+                    continue
+                # utils.Messages.debug('>>> (_add_dummy_data) %s' % entity_type)
                 if len(entity_type) > 5:
-                    dummy_file.source = first_file.source
-                    dummy_entity = copy.deepcopy(entity_type)
-                    dummy_entity.file_name = dummy_file_name
-                    for token in dummy_entity:
-                        token.file_name = dummy_file_name
-                    dummy_file.data[entity_type.text()] = dummy_entity
-            self.files[dummy_file_name] = dummy_file
+                    add_entity(dummy1_file, first_file, entity_type)
+                if len(entity_type) > 2:
+                    add_entity(dummy2_file, first_file, entity_type)
+            self.files[dummy1_file_name] = dummy1_file
+            self.files[dummy2_file_name] = dummy2_file
+
+    def __str__(self):
+        return '<Corpus files=%d>' % (len(self.files))
 
     def get_files(self):
         """Return all File instances in the corpus, sorted on the filename."""
         return [self.files[file_name] for file_name in sorted(self.files)]
+
+    def get_file_names(self) -> list:
+        """Return all file names in the corpus."""
+        return list(sorted(self.files))
+
+    def get_entity(self, text: str, fname: str):
+        """Return the EntityType for the text in file fname."""
+        file = self.files.get(fname + '-transcript.ann')
+        entity = file.data.get(text)
+        return entity
+
+    def data_locations(self):
+        return [['SOURCES', self.sources_folder],
+                ['ENTITIES', self.annotations_folder]]
 
     def next(self):
         """Return the first un-annotated entity."""
@@ -89,8 +118,37 @@ class Corpus(object):
                 if type_entity.link is None:
                     return type_entity
 
+    def suggest_link(self, entity_text: str):
+        """Given an entity, suggest a possible link by looking at previously
+        annotated entities."""
+        suggestions = []
+        for corpus_file in self.get_files():
+            suggestion = corpus_file.data.get(entity_text)
+            if suggestion is not None and suggestion.link is not None:
+                suggestions.append(suggestion.link)
+        c = collections.Counter(suggestions)
+        try:
+            return c.most_common()[0][0]
+        except IndexError:
+            return None
+
+    def status(self):
+        corpus_types = 0
+        corpus_types_done = 0
+        result = []
+        for corpus_file in self.get_files():
+            (total_types, types_done, percent_done_types) = corpus_file.status()
+            corpus_types += total_types
+            corpus_types_done += types_done
+            result.append([corpus_file.name,
+                           corpus_file.entity_type_count(),
+                           round(percent_done_types)])
+        corpus_percentage_done = (corpus_types_done / corpus_types) * 100
+        return corpus_types, corpus_percentage_done, result
+
 
 class File(object):
+
     """Stores all annotations for a file as well as the text source.
 
     name: str    -  the file name
@@ -154,6 +212,7 @@ class File(object):
 
 
 class Entity(object):
+
     """An entity instance, corresponding to an annotation.
 
     identifier: str    -  identifier of the entity annotation
@@ -184,6 +243,7 @@ class Entity(object):
 
 
 class EntityType(object):
+
     """Contains all occurrences of an entity and the link created for it (which
     is equal to None initially) for a single annotation file. The assumption is
     that several occurrence of the same string in a file will have the same
@@ -225,6 +285,28 @@ class EntityType(object):
         """The class of the entity, taken from the first token."""
         return self.tokens[0].entity_class
 
+    def contexts(self, corpus, limit=9999):
+        """Return all contexts for this entity as a list of <left, text, right> tuples."""
+        contexts = []
+        for entity in self[:limit]:
+            corpus_file = corpus.files.get(entity.file_name)
+            left, right = corpus_file.get_context(entity)
+            left = (config.CONTEXT_SIZE - len(left)) * ' ' + left
+            contexts.append([left, self.text(), right])
+        return contexts
+
+    def contexts_as_html(self, corpus, limit=9999):
+        """Return all contexts of the entity as an HTML table."""
+        s = StringIO('<table>\n')
+        for left, kw, right in self.contexts(corpus, limit=limit):
+            s.write('<tr>\n')
+            s.write('  <td align="right">%s</td>\n' % left)
+            s.write('  <td><font color="blue">%s</font></td>' % kw)
+            s.write('  <td>%s</td>' % right)
+            s.write('<tr>\n')
+        s.write('</table>\n')
+        return s. getvalue()
+
     def pp(self):
         print(self)
         for entity in self.tokens[:3]:
@@ -232,6 +314,7 @@ class EntityType(object):
 
 
 class LinkAnnotation(object):
+
     """The link annotation of an EntityType, referring to an entry in Wikipedia.
 
     is_valid: bool     -  True if the instance is complete
@@ -290,6 +373,7 @@ class LinkAnnotation(object):
 
 
 class LinkAnnotations(object):
+
     """Keep track of all the link annotations. A link annotation is a list with
     seven elements: identifier, timestamp, file name, entity text, entity class,
     number of tokens for the entity, and the entity link.
@@ -309,6 +393,9 @@ class LinkAnnotations(object):
         self.annotation_id = 0
         self.annotations_file = annotations_file
         self._load_annotations()
+
+    def __str__(self):
+        return '<LinkAnnotations annotations=%s>' % len(self.annotations)
 
     def __getitem__(self, item):
         return self.annotations[item]
@@ -389,8 +476,17 @@ class LinkAnnotations(object):
         with open(self.annotations_file, 'a') as fh:
             fh.write('%s\n' % annotation.as_tab_separated_line())
 
-    def backup(self):
+    def backup(self) -> str:
         source_file = self.annotations_file
         target_file = config.ANNOTATIONS_BACKUP % timestamp().replace(' ', ':')
-        print('\nCopying %s to %s' % (source_file, target_file))
         shutil.copyfile(source_file, target_file)
+        return target_file
+
+    def search(self, search_term: str):
+        """Returns a list of all the annotations where the search term occurs
+        in the text. The search us case-insensitive."""
+        result = []
+        for annotation in self:
+            if search_term.lower() in annotation.text.lower():
+                result.append(annotation)
+        return result
