@@ -14,7 +14,6 @@ import collections
 from io import StringIO
 
 import config
-import utils
 from utils import timestamp
 
 
@@ -288,7 +287,7 @@ class EntityType(object):
     def contexts(self, corpus, limit=9999):
         """Return all contexts for this entity as a list of <left, text, right> tuples."""
         contexts = []
-        for entity in self[:limit]:
+        for entity in self.tokens[:limit]:
             corpus_file = corpus.files.get(entity.file_name)
             left, right = corpus_file.get_context(entity)
             left = (config.CONTEXT_SIZE - len(left)) * ' ' + left

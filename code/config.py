@@ -6,8 +6,14 @@ Contains variables with the run-time configuration settings.
 
 DEBUG = False
 DEMO = False
-ANNOTATIONS = 'data/annotations.tab'
-ANNOTATIONS_BACKUP = 'data/annotations-%s.tab'
+
+# Locations of the source and entity annotation repositories, edit as needed
+SOURCES = '../../../wgbh-collaboration/21'
+ENTITIES = '../../../clams-aapb-annotations/uploads/2022-jun-namedentity/annotations'
+
+ANNOTATIONS = '../data/annotations.tab'
+ANNOTATIONS_BACKUP = '../data/annotations-%s.tab'
+
 CONTEXT_SIZE = 50
 PROMPT = 'ela>'
 URL_PREFIXES = ('http://', 'https://')

@@ -22,20 +22,14 @@ if 'debug' in sys.argv[1:]:
 if 'demo' in sys.argv[1:]:
     config.DEMO = True
 
-
+utils.Messages.debug('(module) %s' % ('-' * 80))
 utils.Messages.debug('(module) starting page at %s' % utils.timestamp())
 
-# Locations of the source and entity annotation repositories, edit as needed
-SOURCES = '../../wgbh-collaboration/21'
-ENTITIES = '../../clams-aapb-annotations/uploads/2022-jun-namedentity/annotations'
-
-corpus = model.Corpus(ENTITIES, SOURCES)
+corpus = model.Corpus(config.ENTITIES, config.SOURCES)
 link_annotations = model.LinkAnnotations(corpus, config.ANNOTATIONS)
 
 st.set_page_config(layout="wide")
-
 st.markdown(utils.style, unsafe_allow_html=True)
-
 st.markdown("# Entity Link Annotator")
 
 # Using a warning instead of the somewhat easier to use text_input, because
@@ -109,6 +103,7 @@ st.write('')
 if suggested_link is not None:
     utils.Messages.debug('(module) suggested link is %s' % (suggested_link or 'None'))
     st.write('Suggested link: %s' % (suggested_link or None))
+    # TODO: use args instead of partial
     st.button('Accept Suggested Link', on_click=partial(add_link, suggested_link))
 
 st.text_input("Enter link", key='entity_type', on_change=add_link)

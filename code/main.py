@@ -44,10 +44,6 @@ import config
 from utils import ANSI, validate_link
 from model import Corpus, LinkAnnotation, LinkAnnotations
 
-# Locations of the source and entity annotation repositories, edit as needed
-SOURCES = '../../wgbh-collaboration/21'
-ENTITIES = '../../clams-aapb-annotations/uploads/2022-jun-namedentity/annotations'
-
 
 class Annotator(object):
 
@@ -153,7 +149,7 @@ class Annotator(object):
         for entity in self.next_entity:
             corpus_file = self.corpus.files.get(entity.file_name)
             left, right = corpus_file.get_context(entity)
-            left = (config.CONTEXT_SIZE-len(left)) * ' ' + left
+            left = (config.CONTEXT_SIZE - len(left)) * ' ' + left
             print('    %s[%s%s%s]%s' % (left, ANSI.BLUE, text, ANSI.END, right))
         self.link_suggestion = self.corpus.suggest_link(text)
         if self.link_suggestion:
@@ -194,7 +190,7 @@ class Annotator(object):
 
     @staticmethod
     def print_help():
-        with open('help.txt') as fh:
+        with open('../docs/help-repl.txt') as fh:
             print("\n%s" % fh.read().strip())
 
     @staticmethod
@@ -209,4 +205,4 @@ if __name__ == '__main__':
         config.DEBUG = True
     if '--demo' in args:
         config.DEMO = True
-    Annotator(Corpus(ENTITIES, SOURCES), config.ANNOTATIONS).loop()
+    Annotator(Corpus(config.ENTITIES, config.SOURCES), config.ANNOTATIONS).loop()

@@ -13,4 +13,8 @@ Available commands:
     c <context_size>   -  set the size of the context, default is 40
     b | backup         -  create a time-stamped backup in the data directory
 
-See the readme file for some more verbose instructions.
+See the readme file in docs/help-repl.md for some more verbose instructions. That
+file is in Markdown format which requires a special editor, if you do not have such
+an editor you can see the latest version of the help file on-line at
+
+https://github.com/clamsproject/annotation-entity-linking/blob/main/docs/manual-repl.md
