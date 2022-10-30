@@ -4,14 +4,13 @@ To run this in debug and demo mode:
 
 $ streamlit run gui.py demo debug
 
-Do not use --demo and --debug because then streamlit/linux thinks those are
-streamlit arguments.
+Do not use --demo and --debug because then linux and streamlit think those
+arguments are streamlit arguments.
 
 """
 
 import sys
 import streamlit as st
-from functools import partial
 
 import config
 import utils
@@ -21,6 +20,11 @@ if 'debug' in sys.argv[1:]:
     config.DEBUG = True
 if 'demo' in sys.argv[1:]:
     config.DEMO = True
+if 'docker' in sys.argv[1:]:
+    config.SOURCES = '/data/wgbh-collaboration/21'
+    config.ENTITIES = '/data/clams-aapb-annotations/uploads/2022-jun-namedentity/annotations'
+    config.ANNOTATIONS = '/data/annotations.tab'
+    config.ANNOTATIONS_BACKUP = '/data/annotations-%s.tab'
 
 utils.Messages.debug('(module) %s' % ('-' * 80))
 utils.Messages.debug('(module) starting page at %s' % utils.timestamp())
@@ -46,11 +50,6 @@ def backup():
         utils.Messages.info('Backup created in %s' % file_name)
     except OSError:
         utils.Messages.error('Backup failed')
-
-
-def time():
-    utils.Messages.reset()
-    utils.Messages.info('The time is %s' % utils.timestamp())
 
 
 def add_link(link: str = None):
@@ -81,11 +80,9 @@ def fix_link(entity_to_fix):
 
 
 st.sidebar.button('Backup', on_click=backup)
-st.sidebar.button('Time please', on_click=time)
-st.sidebar.button('Winter is coming', on_click=st.snow)
 
 choice = st.sidebar.radio(
-    "Choose", ('Messages', 'Annotations', 'Progress', 'State'),
+    "Choose", ('Messages', 'Annotations', 'Progress', 'Help', 'State'),
     label_visibility='hidden')
 
 total_types, percentage_done, done_per_file = corpus.status()
@@ -103,19 +100,20 @@ st.write('')
 if suggested_link is not None:
     utils.Messages.debug('(module) suggested link is %s' % (suggested_link or 'None'))
     st.write('Suggested link: %s' % (suggested_link or None))
-    # TODO: use args instead of partial
-    st.button('Accept Suggested Link', on_click=partial(add_link, suggested_link))
+    st.button('Accept Suggested Link', on_click=add_link, args=(suggested_link,))
 
 st.text_input("Enter link", key='entity_type', on_change=add_link)
 
 '---'
 with st.container():
-    st.write('**%s**' % choice)
+    # st.write('**%s**' % choice)
     if choice == 'Messages':
-        utils.render_messages(st)
+        utils.show_messages(st)
     elif choice == 'Annotations':
-        utils.render_annotations(st, link_annotations, fix_link)
+        utils.show_annotations(st, link_annotations, fix_link)
     elif choice == 'Progress':
-        utils.render_progress(st, corpus)
+        utils.show_progress(st, corpus)
+    elif choice == 'Help':
+        utils.show_help(st)
     elif choice == 'State':
-        utils.render_state(st, sys.modules[__name__])
+        utils.show_state(st, sys.modules[__name__])

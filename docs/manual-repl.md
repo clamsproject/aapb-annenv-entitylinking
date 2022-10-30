@@ -17,13 +17,15 @@ You also need the source files and entity annotations, which typically, but not 
 - source files: [https://github.com/clamsproject/wgbh-collaboration](https://github.com/clamsproject/wgbh-collaboration) (private repository)
 - annotations: [https://github.com/clamsproject/clams-aapb-annotations](https://github.com/clamsproject/clams-aapb-annotations)
 
-The code assumes that both repositories are cloned and uses two variables to store the paths to directories in the cloned repositories:
+The code assumes that both repositories are cloned and the `code/config.py` script uses two variables to store the paths to directories in the cloned repositories:
 
 
 ```python
 SOURCES = '../../../wgbh-collaboration/21'
 ENTITIES = '../../../clams-aapb-annotations/uploads/2022-jun-namedentity/annotations/'
 ```
+
+Edit these as needed.
 
 #### Running the tool
 

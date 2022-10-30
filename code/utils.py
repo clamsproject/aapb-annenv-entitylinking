@@ -71,25 +71,30 @@ def html(streamlit, text: str):
     streamlit.markdown(text, unsafe_allow_html=True)
 
 
-def render_progress(streamlit, corpus):
+def show_progress(streamlit, corpus):
     total_types, percentage_done, done_per_file = corpus.status()
     # streamlit.write('Done %d%% of %d types' % (round(percentage_done), total_types))
     streamlit.table(pd.DataFrame(done_per_file, columns=['file', 'entities', '% done']))
 
 
-def render_messages(streamlit):
+def show_messages(streamlit):
     streamlit.table(pd.DataFrame(Messages.messages,
                                  columns=['timestamp', 'type', 'message']))
 
 
-def render_state(streamlit, module):
+def show_state(streamlit, module):
     streamlit.table(
         pd.DataFrame(
             all_vars(module, streamlit.session_state),
             columns=['type', 'variable', 'value']))
 
 
-def render_annotations(streamlit, annotations, callback=None):
+def show_help(st):
+    with open('../docs/help-gui.md') as fh:
+        st.markdown(fh.read())
+
+
+def show_annotations(streamlit, annotations, callback=None):
     streamlit.text_input('Search annotations', key='search')
     annos = list(reversed(annotations.search(streamlit.session_state.search)))[:25]
     table = annotations_as_table(annos)
