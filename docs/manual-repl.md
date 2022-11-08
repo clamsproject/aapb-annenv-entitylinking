@@ -1,6 +1,6 @@
 # ELA Manual - Command line version
 
-Notes on how to use the command line version of the ELA tool.
+Notes on how to use the command line version of the ELA tool. These notes assume some familiarity with terminal commands and tools like git.
 
 In case you are wondering about the second part of the name of this file: REPL stands for read–eval–print loop, which is a simple interactive computer programming environment that takes single user inputs, executes them, and returns the result to the user, see [https://en.wikipedia.org/wiki/Read–eval–print_loop](https://en.wikipedia.org/wiki/Read–eval–print_loop).
 

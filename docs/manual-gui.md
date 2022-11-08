@@ -1,15 +1,18 @@
 # ELA Manual - GUI version
 
-Notes on how to use the Graphical User Interface (GUI) version of the ELA tool. The preferred way to run this tool is as a Docker container, but you can also run it without Docker.
+These are notes on how to install and start the Graphical User Interface (GUI) version of the ELA tool, for help on using the tool see [help-gui.md](help-gui.md).
+
+The preferred way to run this tool is as a Docker container, but you can also run it without Docker.
 
 ### Running the tool with Docker
 
 You need a terminal window and the ability to run Git and Docker:
 
 - Git is needed to get this code and the source data and annotations that are required by this tool, see [https://git-scm.com/book/en/v2/Getting-Started-Installing-Git](https://git-scm.com/book/en/v2/Getting-Started-Installing-Git) on how to install Git.
-- Docker is a way to package and distribute code, see [https://docs.docker.com/get-docker/](https://docs.docker.com/get-docker/) for help on installation.
+  - This is optional if all you want to use is one of the released versions and not the most recent version in the main branch of the project (or any version in any branch).
+- Docker is a way to package, distribute and run code, see [https://docs.docker.com/get-docker/](https://docs.docker.com/get-docker/) for help on installation. Make sure that Docker is running when you want to use the ELA tool.
 
-To get the annotation tool code:
+To get the annotation tool code either go to [https://github.com/clamsproject/annotation-entity-linking/releases](https://github.com/clamsproject/annotation-entity-linking/releases) and download the most recent release or type in the following:
 
 ```bash
 $ git clone https://github.com/clamsproject/annotation-entity-linking
@@ -37,7 +40,7 @@ $ cd ..
 $ docker build -t link-annotator .
 ```
 
-The -t option gives a tag to the image, if you do not add a tag the image created will have a obscure name like a146e25431ee, which is hardly convenient. You do not have to use `link-annotator` as the name, any name will do as long as it meets certain conditions like being all lowercase.
+The -t option gives a tag to the image, if you do not add a tag the image created will have an obscure name like a146e25431ee, which is fine, but hardly convenient. You do not have to use `link-annotator` as the name, any name will do as long as it meets certain conditions like being all lowercase.
 
 Run the container as follows (this can be from any directory):
 
@@ -51,7 +54,12 @@ To view the application in your browser open [http://localhost:8501](http://loca
 
 ### Running the tool without Docker
 
-The requirements to run this tool are Git and a recent Python version with the Streamlit module installed. The Streamlit installation documentation [https://docs.streamlit.io/library/get-started/installation](https://docs.streamlit.io/library/get-started/installation) mentions it should run on Python 3.7 thorugh 3.10, but we have had issues running the tool on Python 3.7 and have typically used Python 3.9.  To install Streamlit and its dependencies:
+The requirements to run this tool without using Docker are:
+
+- A way to get the code: either use Git or download the code from the releases page (see above).
+- A recent Python version with the Streamlit module installed. The Streamlit installation documentation [https://docs.streamlit.io/library/get-started/installation](https://docs.streamlit.io/library/get-started/installation) mentions it should run on Python 3.7 thorugh 3.10, but we have had issues running the tool on Python 3.7 and have typically used Python 3.9.
+
+To install Streamlit and its dependencies:
 
 ```bash
 $ pip install -r code/requirements-gui.txt

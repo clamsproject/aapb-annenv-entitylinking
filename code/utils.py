@@ -38,6 +38,16 @@ class Messages:
             print('>>> %s' % text)
 
 
+def split_user_input(user_input: str) -> tuple:
+    user_input = user_input.strip()
+    if not user_input.strip():
+        return '', ''
+    if user_input.startswith('***'):
+        return '', user_input[3:]
+    link, *comment = user_input.split(' ***', 1)
+    return link.strip(), comment[0].strip() if comment else ''
+
+
 def all_vars(module, session_state):
     """Return tuples for all interesting state variables with variable type,
     variable name and variable value."""
@@ -55,7 +65,7 @@ def _module_vars(module):
 
 def _config_vars():
     return [(v, getattr(config, v)) for v in dir(config)
-            if not v.startswith('__') and v != 'Warnings']
+            if not v.startswith('_') and v not in ('Warnings', 'update')]
 
 
 def validate_link(link: str):
@@ -99,31 +109,32 @@ def show_annotations(streamlit, annotations, callback=None):
     annos = list(reversed(annotations.search(streamlit.session_state.search)))[:25]
     table = annotations_as_table(annos)
     streamlit.table(
-        pd.DataFrame(table, columns=['id', 'file', 'n', 'text', 'type', 'link']))
-    streamlit.text_input('Display context', key='display')
+        pd.DataFrame(table, columns=['id', 'file', 'n', 'text', 'type', 'link', 'comment']))
+    streamlit.text_input('Display entity', key='display')
     if streamlit.session_state.display:
         idx = int(streamlit.session_state.display)
         row = select_row(table, idx)
         if row is None:
             streamlit.error('There is no row with id=%s' % idx)
         else:
-            _id, fname, _n, etext, _etype, link = row
+            _id, fname, _n, etext, _etype, link, comment = row
             entity = annotations.corpus.get_entity(etext, fname)
             streamlit.info("**[%s]** (%s) &longrightarrow; %s\n"
                            % (entity.text(), entity.entity_class(), link))
             html(streamlit, entity.contexts_as_html(annotations.corpus, limit=10))
+            link_and_comment = '%s *** %s' % (link, comment) if comment else link
             streamlit.text_input("Fix link", key='entity_type_fix',
                                  on_change=callback, args=(entity,),
-                                 value=link, label_visibility='hidden')
+                                 value=link_and_comment, label_visibility='hidden')
 
 
 def annotations_as_table(annotations):
     table = []
     for annotation in annotations:
-        ident, ts, fname, text, cat, count, link = annotation.fields()
+        ident, ts, fname, text, cat, count, link, comment = annotation.fields()
         if fname.endswith('-transcript.ann'):
             fname = fname[:-15]
-        table.append([ident, fname, count, text, cat, link])
+        table.append([ident, fname, count, text, cat, link, comment])
     return table
 
 

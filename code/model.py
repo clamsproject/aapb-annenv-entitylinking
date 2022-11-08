@@ -220,6 +220,8 @@ class Entity(object):
     entity_class: str  -  class of the entity (person, location, etcetera)
     start: int         -  start offset of the entity
     end: int           -  end offset of the entity
+    link: str          -  link to be added during annotation
+    comment: str       -  comment to be added during annotation
 
     """
 
@@ -235,6 +237,8 @@ class Entity(object):
         self.entity_class = entity_class
         self.start = int(p1)
         self.end = int(p2)
+        self.link = None
+        self.comment = None
 
     def __str__(self):
         return ("<Entity %s '%s' %s %s %s>"
@@ -314,7 +318,8 @@ class EntityType(object):
 
 class LinkAnnotation(object):
 
-    """The link annotation of an EntityType, referring to an entry in Wikipedia.
+    """The link annotation of an EntityType, referring to a URL, typically an
+    entry in Wikipedia.
 
     is_valid: bool     -  True if the instance is complete
     identifier: int    -  identifier of the entity type, starting at 1
@@ -323,10 +328,8 @@ class LinkAnnotation(object):
     text: str          -  the text string of the entity type
     entity_class: str  -  the class of the entity (person, etcetera)
     tokens: int        -  number of entity tokens in the type
-    link: str          -  the link to Wikipedia
-
-    The link is not a full Wikipedia link but just the last part of it, so
-    instead of "https://en.wikipedia.org/wiki/Jim_Lehrer" we have "Jim_Lehrer".
+    link: str          -  the link to Wikipedia or some other authority
+    comment: str       -  any comment, could be an alternative link
 
     The entity_class and tokens variables are strictly not needed since you can
     get them from the entity type, they are in here for convenience.
@@ -336,7 +339,7 @@ class LinkAnnotation(object):
     def __init__(self, line):
         """Always initialize from a line with tab-separated fields."""
         fields = line.strip('\n').strip(' ').split('\t')
-        self.is_valid = True if len(fields) == 7 else False
+        self.is_valid = True if len(fields) >= 7 else False
         self.identifier = int(fields[0])
         self.timestamp = fields[1]
         self.file_name = fields[2]
@@ -344,6 +347,7 @@ class LinkAnnotation(object):
         self.entity_class = fields[4]
         self.tokens = int(fields[5])
         self.link = fields[6]
+        self.comment = fields[7] if len(fields) > 7 else None
 
     def __str__(self):
         return "<LinkAnnotation %s %s '%s' '%s'>" \
@@ -356,7 +360,7 @@ class LinkAnnotation(object):
     def fields(self) -> tuple:
         """Returns the values of all instance variables in a fixed order."""
         return (self.identifier, self.timestamp, self.file_name, self.text,
-                self.entity_class, self.tokens, self.link)
+                self.entity_class, self.tokens, self.link, self.comment)
 
     def as_pretty_line(self) -> str:
         """Returns a line for pretty printing in the tool."""
@@ -442,14 +446,14 @@ class LinkAnnotations(object):
                 return a
         return None
 
-    def add_link(self, entity, link):
+    def add_link(self, entity, link, comment):
         """Create an instance of LinkAnnotation and save it."""
-        annotation_list = self.create_link(link, entity=entity)
+        annotation_list = self.create_link(link, entity=entity, comment=comment)
         annotation_str = '\t'.join([str(f) for f in annotation_list])
         annotation_obj = LinkAnnotation(annotation_str)
         self.save_annotation(annotation_obj)
 
-    def create_link(self, link, entity=None, annotation=None) -> list:
+    def create_link(self, link, entity=None, comment=None, annotation=None) -> list:
         """Create a new link annotation. If an existing annotation is handed in
         we use that to set some of the new annotation's values, otherwise we use
         the information from the current entity."""
@@ -466,7 +470,10 @@ class LinkAnnotations(object):
             (fname, text, e_class, e_len) = \
                 (annotation.file_name, annotation.text,
                  annotation.entity_class, annotation.tokens)
-        return [anno_id, ts, fname, text, e_class, e_len, link]
+        specs = [anno_id, ts, fname, text, e_class, e_len, link]
+        if comment is not None:
+            specs.append(comment)
+        return specs
 
     def save_annotation(self, annotation: LinkAnnotation):
         """Append the annotation to the annotations list and write it to the

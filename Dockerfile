@@ -18,4 +18,4 @@ COPY code code
 
 WORKDIR /app/code
 
-ENTRYPOINT ["streamlit", "run", "gui.py", "--server.port=8501", "--server.address=0.0.0.0", "demo", "debug", "docker"]
+ENTRYPOINT ["streamlit", "run", "gui.py", "--server.port=8501", "--server.address=0.0.0.0", "demo", "docker"]

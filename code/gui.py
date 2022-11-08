@@ -16,23 +16,19 @@ import config
 import utils
 import model
 
-if 'debug' in sys.argv[1:]:
-    config.DEBUG = True
-if 'demo' in sys.argv[1:]:
-    config.DEMO = True
-if 'docker' in sys.argv[1:]:
-    config.SOURCES = '/data/wgbh-collaboration/21'
-    config.ENTITIES = '/data/clams-aapb-annotations/uploads/2022-jun-namedentity/annotations'
-    config.ANNOTATIONS = '/data/annotations.tab'
-    config.ANNOTATIONS_BACKUP = '/data/annotations-%s.tab'
+st.set_page_config(layout="wide")
 
 utils.Messages.debug('(module) %s' % ('-' * 80))
 utils.Messages.debug('(module) starting page at %s' % utils.timestamp())
 
+# Update the configuration given arguments like 'demo' and 'docker'
+config.update(sys.argv[1:])
+
+# Load the underlying data from the model and get the next entity
 corpus = model.Corpus(config.ENTITIES, config.SOURCES)
 link_annotations = model.LinkAnnotations(corpus, config.ANNOTATIONS)
+entity = corpus.next()
 
-st.set_page_config(layout="wide")
 st.markdown(utils.style, unsafe_allow_html=True)
 st.markdown("# Entity Link Annotator")
 
@@ -54,41 +50,55 @@ def backup():
 
 def add_link(link: str = None):
     utils.Messages.reset()
-    provided_link = st.session_state.entity_type if link is None else link
-    provided_link = link_annotations.normalize_link(provided_link)
-    utils.Messages.debug('(add_link)  %s -> %s' % (entity.text(), provided_link))
-    if utils.validate_link(provided_link):
-        entity.link = provided_link
-        link_annotations.add_link(entity, provided_link)
-        utils.Messages.info("Linked **%s** to %s" % (entity.text(), provided_link))
-        # reset the type only if you are successful
-        st.session_state.entity_type = ''
-    else:
-        utils.Messages.error(config.Warnings.NON_EXISTING_URL % provided_link)
+    user_input = st.session_state.entity_type if link is None else link
+    (link, comment) = utils.split_user_input(user_input)
+    link = link_annotations.normalize_link(link)
+    validate_and_add('add_link', entity, link, comment, post=reset_entity_type)
 
 
 def fix_link(entity_to_fix):
-    new_link = st.session_state.entity_type_fix
-    new_link = link_annotations.normalize_link(new_link)
-    utils.Messages.debug('(fix_link) %s -> %s' % (entity_to_fix, new_link))
-    if utils.validate_link(new_link):
-        entity_to_fix.link = new_link
-        link_annotations.add_link(entity_to_fix, new_link)
-        utils.Messages.info("Linked **%s** to %s" % (entity_to_fix.text(), new_link))
+    (link, comment) = utils.split_user_input(st.session_state.entity_type_fix)
+    link = link_annotations.normalize_link(link)
+    validate_and_add('fix_link', entity_to_fix, link, comment)
+
+
+def validate_and_add(caller: str, focus_entity: model.Entity,
+                     link: str, comment: str, post=None):
+    """Validate the link and add it to the annotations. If a post function is
+    given then it will be called, typically to reset some input field."""
+    # TODO: also print the state while debugging
+    utils.Messages.debug('(%s)  %s -> %s (%s)'
+                         % (caller, entity.text(), link, comment))
+    if utils.validate_link(link):
+        focus_entity.link = link
+        focus_entity.comment = comment
+        link_annotations.add_link(focus_entity, link, comment)
+        utils.Messages.info("Linked **%s** to %s (%s)"
+                            % (focus_entity.text(), link, comment))
+        if post is not None:
+            post()
     else:
-        utils.Messages.error(config.Warnings.NON_EXISTING_URL % new_link)
+        utils.Messages.error(config.Warnings.NON_EXISTING_URL % link)
+
+
+def reset_entity_type():
+    utils.Messages.debug("Resetting entity type (old value = %s)"
+                         % st.session_state.entity_type)
+    st.session_state.entity_type = ''
 
 
 st.sidebar.button('Backup', on_click=backup)
 
+# Add the sidebar radio button group with choices
+choices = ['Annotations', 'Progress', 'Messages', 'Help']
+if config.DEBUG:
+    choices.append('State')
 choice = st.sidebar.radio(
-    "Choose", ('Messages', 'Annotations', 'Progress', 'Help', 'State'),
-    label_visibility='hidden')
+    "Choose", choices, label_visibility='hidden')
 
 total_types, percentage_done, done_per_file = corpus.status()
 st.sidebar.write('Done %d%% of %d types' % (round(percentage_done), total_types))
 
-entity = corpus.next()
 utils.Messages.debug('(module) current entity is %s' % entity)
 utils.Messages.debug('(module) session_state is %s' % st.session_state)
 
@@ -102,11 +112,10 @@ if suggested_link is not None:
     st.write('Suggested link: %s' % (suggested_link or None))
     st.button('Accept Suggested Link', on_click=add_link, args=(suggested_link,))
 
-st.text_input("Enter link", key='entity_type', on_change=add_link)
+st.text_input('Enter link and an optional comment', key='entity_type', on_change=add_link)
 
 '---'
 with st.container():
-    # st.write('**%s**' % choice)
     if choice == 'Messages':
         utils.show_messages(st)
     elif choice == 'Annotations':
