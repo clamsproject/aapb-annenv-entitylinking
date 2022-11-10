@@ -1,4 +1,5 @@
 import datetime
+import inspect
 
 import requests
 import pandas as pd
@@ -37,6 +38,29 @@ class Messages:
         if config.DEBUG:
             print('>>> %s' % text)
 
+    @classmethod
+    def log(cls, text: str, source=None, entry_type='DEBUG'):
+        if config.LOGGING:
+            frame: inspect.FrameInfo = inspect.stack()[1]
+            source = frame.function if source is None else source
+            with open(config.LOGGING_FILE, 'a') as fh:
+                source = source if source.startswith('<') else '(%s)' % source
+                fh.write(f'{timestamp()} : {entry_type:5s} : {source:20s}  --  {text}\n')
+
+    @classmethod
+    def log_info(cls, text: str, source=None):
+        source = inspect.stack()[1].function if source is None else source
+        cls.log(text, entry_type='INFO', source=source)
+
+    @classmethod
+    def log_error(cls, text: str, source=None):
+        source = inspect.stack()[1].function if source is None else source
+        cls.log(text, entry_type='ERROR', source=source)
+
+
+def feature_as_string(feature_name: str, feature_value: object):
+    return f'{feature_name:15s}  =  {feature_value}'
+
 
 def split_user_input(user_input: str) -> tuple:
     user_input = user_input.strip()
@@ -46,6 +70,11 @@ def split_user_input(user_input: str) -> tuple:
         return '', user_input[3:]
     link, *comment = user_input.split(' ***', 1)
     return link.strip(), comment[0].strip() if comment else ''
+
+
+def line_number():
+    cf = inspect.currentframe()
+    return cf.f_back.f_lineno
 
 
 def all_vars(module, session_state):
@@ -100,13 +129,14 @@ def show_state(streamlit, module):
 
 
 def show_help(st):
-    with open('../docs/help-gui.md') as fh:
+    with open('../docs/help.md') as fh:
         st.markdown(fh.read())
 
 
 def show_annotations(streamlit, annotations, callback=None):
     streamlit.text_input('Search annotations', key='search')
-    annos = list(reversed(annotations.search(streamlit.session_state.search)))[:25]
+    annos = list(reversed(annotations.search(streamlit.session_state.search)))
+    annos = annos[:config.MAX_ANNOTATIONS_DISPLAYED]
     table = annotations_as_table(annos)
     streamlit.table(
         pd.DataFrame(table, columns=['id', 'file', 'n', 'text', 'type', 'link', 'comment']))
@@ -121,7 +151,9 @@ def show_annotations(streamlit, annotations, callback=None):
             entity = annotations.corpus.get_entity(etext, fname)
             streamlit.info("**[%s]** (%s) &longrightarrow; %s\n"
                            % (entity.text(), entity.entity_class(), link))
-            html(streamlit, entity.contexts_as_html(annotations.corpus, limit=10))
+            html(streamlit,
+                 entity.contexts_as_html(annotations.corpus,
+                                         limit=config.MAX_CONTEXT_ELEMENTS))
             link_and_comment = '%s *** %s' % (link, comment) if comment else link
             streamlit.text_input("Fix link", key='entity_type_fix',
                                  on_change=callback, args=(entity,),

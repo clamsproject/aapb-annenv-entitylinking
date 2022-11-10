@@ -266,8 +266,8 @@ class EntityType(object):
         self.link = None
 
     def __str__(self):
-        return ("<EntityType %s '%s' %s %s>"
-                % (len(self), self.text(), self.entity_class(), self.link))
+        return ("<EntityType '%s' tokens=%d class=%s link=%s>"
+                % (self.text(), len(self), self.entity_class(), self.link))
 
     def __getitem__(self, i) -> Entity:
         return self.tokens[i]
@@ -355,7 +355,7 @@ class LinkAnnotation(object):
 
     def is_dummy_annotation(self) -> bool:
         """Returns True if this file was created as a dummy for the demo mode."""
-        return '000-0000000000' in self.file_name
+        return '-000-' in self.file_name
 
     def fields(self) -> tuple:
         """Returns the values of all instance variables in a fixed order."""
