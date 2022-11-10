@@ -18,4 +18,4 @@ COPY code code
 
 WORKDIR /app/code
 
-ENTRYPOINT ["streamlit", "run", "app.py", "--server.address=0.0.0.0", "logging", "docker"]
+ENTRYPOINT ["streamlit", "run", "app.py", "--server.address=0.0.0.0", "demo", "debug", "logging", "docker"]

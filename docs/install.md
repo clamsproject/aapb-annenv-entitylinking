@@ -1,6 +1,6 @@
-# ELA Manual - GUI version
+# Installing ELA
 
-These are notes on how to install and start the Graphical User Interface (GUI) version of the ELA tool, for help on using the tool see [help-gui.md](help-gui.md).
+These are notes on how to install and start the ELA tool, for help on using the tool see [help.md](help.md).
 
 The preferred way to run this tool is as a Docker container, but you can also run it without Docker.
 
@@ -18,7 +18,7 @@ To get the annotation tool code either go to [https://github.com/clamsproject/an
 $ git clone https://github.com/clamsproject/annotation-entity-linking
 ```
 
-You also need the source files and entity annotations, which are in the two GitHub repositories:
+You also need the source files and entity annotations, which are in two GitHub repositories:
 
 - source files: [https://github.com/clamsproject/wgbh-collaboration](https://github.com/clamsproject/wgbh-collaboration) (private repository)
 - entity annotations: [https://github.com/clamsproject/clams-aapb-annotations](https://github.com/clamsproject/clams-aapb-annotations)
@@ -31,7 +31,7 @@ $ git clone https://github.com/clamsproject/wgbh-collaboration
 $ git clone https://github.com/clamsproject/clams-aapb-annotations
 ```
 
-The `wgbh-collaboration` is a private repository so you need to have read access to it. When you try to clone it you may be asked for a login and just your account name and password won't do. You will need to create and use a personal access token, see [https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/creating-a-personal-access-token](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/creating-a-personal-access-token) on how to do that.
+Nota that `wgbh-collaboration` is a private repository so you need to have been given read access to it. When you try to clone this private repository you may be asked for a login and just your GitHub account name and password won't do. You will need to create and use a personal access token, see the instructions at  [https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/creating-a-personal-access-token](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/creating-a-personal-access-token) on how to do that.
 
 Build the Docker image from the top-level of this repository (the level where the Dockerfile is):
 
@@ -48,7 +48,7 @@ Run the container as follows (this can be from any directory):
 $ docker run -idt --rm -p 8501:8501 -v $PWD/data:/data link-annotator
 ```
 
-The -v option in the command above creates a directory `/data` on the container and mounts it to the `data` directory in the current directory. Annotations are written to `/data/annotations.tab` on the container and will because of the mount also be available in `data` and therefore persist after the container is stopped and deleted.
+The -v option in the command above creates a directory `/data` on the container and mounts it to the `data` directory in the current directory. Annotations are written to `/data/annotations.tab` on the container and will because of the mount also be available in `data` and therefore persist after the container is stopped and deleted. It is possible to mount to another local directory as long as that directory has the sources and entity annotations and as well as previously saved link annotations.
 
 To view the application in your browser open [http://localhost:8501](http://localhost:8501). Link annotations will be written to `data/annotations.tab`.
 
@@ -62,7 +62,7 @@ The requirements to run this tool without using Docker are:
 To install Streamlit and its dependencies:
 
 ```bash
-$ pip install -r code/requirements-gui.txt
+$ pip install -r code/requirements.txt
 ```
 
 You can also go for the very latest streamlit and simply do
@@ -87,7 +87,7 @@ Start the tool from the code directory:
 
 ```bash
 $ cd code
-$ streamlit run gui.py
+$ streamlit run app.py
 ```
 
 You can then use the application in your browser at [http://localhost:8501](http://localhost:8501). Link annotations will be written to `data/annotations.tab`.

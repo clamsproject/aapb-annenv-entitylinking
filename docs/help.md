@@ -1,4 +1,4 @@
-### Help on using the GUI
+### Using ELA
 
 The ELA tool presents entities from the source corpus one-by-one in a fixed order and for each entity a link can be entered that grounds the entity to an on-line authority. The tool starts with the first document in the corpus, collects all instances of each entity and then presents the first entity to the user with the contexts in which it occurs. It will loop through all the entities in the document and then continue to the next document.
 
@@ -11,15 +11,15 @@ The tool's GUI has three areas:
 The main pane of this tool shows (i) an optional message printed on a lightyellow background, (ii) the name and category of the next entity to annotate followed by some examples in context an dpotentially a link suggestion, and (iii) a field to enter the link for the entity. Under the main pain is the auxiliary pane with space for one of the following, as determined by the radio buttons in the left pane: 
 
 - a list of messages that were displayed during the current run of the tool
-- a list of recent annotations, capped at 50
+- a list of recent annotations, capped at 25
 - a report on annotation progress so far with numbers per document
 - help on using the tool (what you are reading now)
 
 When the tool runs in debug mode there will also be a radio button that lets you print the current state of the tool, which is useful for debugging.
 
-**General annotation startegy**
+**General annotation strategy**
 
-Have two windows open, this tool and [Wikipedia](https://en.wikipedia.org). Look at the entity and its context shown in the main pane. Find a Wikipedia pages that is about the entity described in the context and copy and paste the Wikipedia URL for that entity to the input field (see below) and hit enter. The tool will check whether the URL entered exists (emiting an error message if the link does not exists), print a message that it added a link, add the link to the list of annotations and then present the next entity to be annotated. Any links added will be automatically saved to `data/annotations.tab`.
+Have two windows open, this tool and [Wikipedia](https://en.wikipedia.org). Look at the entity and its context shown in the main pane. Find a Wikipedia pages that is about the entity described in the context and copy and paste the Wikipedia URL for that entity to the input field (see below) and hit enter. The tool will check whether the URL entered exists (emiting an error message if the link does not exists), print a message that it added a link, add the link to the list of annotations and then present the next entity to be annotated. Any links added will be automatically appended to the end of `data/annotations.tab`.
 
 When the tool encounters an entity that was annotated in a previous document then it will suggest the link from that previous directory and you can just click the button that accompanies the suggestion.
 
@@ -38,6 +38,10 @@ You can enter a search term in the "Search annotations" input field to update th
 **Fixing previous errors**
 
 If you see an error in a past annotation you can fix it. First follow the instructions in "Viewing past annotations" above to select the old annotation. Then just edit the unlabeled field in the same way as you would the edit the "Enter link and an optional comment" field and hit enter. When you do this the old annotation is not removed, all that happens is that a new annotation is added to the top of the list.
+
+**Backing up**
+
+Pressing the "Backup" button creates a time-stamped annotations file in the `data` directory (or another directory if the Docker container was not started in the standard way).
 
 **Known issues and workarounds**
 
