@@ -134,12 +134,12 @@ st.text_input('Enter link and an optional comment', key='entity_type', on_change
 '---'
 with st.container():
     if choice == 'Messages':
-        utils.show_messages(st)
+        utils.DisplayBuilder.show_messages(st)
     elif choice == 'Annotations':
-        utils.show_annotations(st, link_annotations, fix_link)
+        utils.DisplayBuilder.show_annotations(st, link_annotations, fix_link)
     elif choice == 'Progress':
-        utils.show_progress(st, corpus)
+        utils.DisplayBuilder.show_progress(st, corpus)
     elif choice == 'Help':
-        utils.show_help(st)
+        utils.DisplayBuilder.show_help(st)
     elif choice == 'State':
-        utils.show_state(st, sys.modules[__name__])
+        utils.DisplayBuilder.show_state(st, sys.modules[__name__])

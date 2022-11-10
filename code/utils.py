@@ -72,11 +72,6 @@ def split_user_input(user_input: str) -> tuple:
     return link.strip(), comment[0].strip() if comment else ''
 
 
-def line_number():
-    cf = inspect.currentframe()
-    return cf.f_back.f_lineno
-
-
 def all_vars(module, session_state):
     """Return tuples for all interesting state variables with variable type,
     variable name and variable value."""
@@ -110,54 +105,64 @@ def html(streamlit, text: str):
     streamlit.markdown(text, unsafe_allow_html=True)
 
 
-def show_progress(streamlit, corpus):
-    total_types, percentage_done, done_per_file = corpus.status()
-    # streamlit.write('Done %d%% of %d types' % (round(percentage_done), total_types))
-    streamlit.table(pd.DataFrame(done_per_file, columns=['file', 'entities', '% done']))
+class DisplayBuilder(object):
 
+    @classmethod
+    def show_progress(cls, streamlit, corpus):
+        total_types, percentage_done, done_per_file = corpus.status()
+        # streamlit.write('Done %d%% of %d types' % (round(percentage_done), total_types))
+        streamlit.table(pd.DataFrame(done_per_file, columns=['file', 'entities', '% done']))
 
-def show_messages(streamlit):
-    streamlit.table(pd.DataFrame(Messages.messages,
-                                 columns=['timestamp', 'type', 'message']))
+    @classmethod
+    def show_messages(cls, streamlit):
+        streamlit.table(pd.DataFrame(Messages.messages,
+                                     columns=['timestamp', 'type', 'message']))
 
+    @classmethod
+    def show_state(cls, streamlit, module):
+        streamlit.table(
+            pd.DataFrame(
+                all_vars(module, streamlit.session_state),
+                columns=['type', 'variable', 'value']))
 
-def show_state(streamlit, module):
-    streamlit.table(
-        pd.DataFrame(
-            all_vars(module, streamlit.session_state),
-            columns=['type', 'variable', 'value']))
+    @classmethod
+    def show_help(cls, st):
+        with open('../docs/help.md') as fh:
+            st.markdown(fh.read())
 
+    @classmethod
+    def show_annotations(cls, streamlit, annotations, callback=None):
+        streamlit.text_input('Search annotations', key='search')
+        annos = list(reversed(annotations.search(streamlit.session_state.search)))
+        annos = annos[:config.MAX_ANNOTATIONS_DISPLAYED]
+        table = annotations_as_table(annos)
+        streamlit.table(
+            pd.DataFrame(table, columns=['id', 'file', 'n', 'text', 'type', 'link', 'comment']))
+        streamlit.text_input('Display entity', key='display')
+        if streamlit.session_state.display:
+            DisplayBuilder.show_entity(streamlit, table, annotations, callback)
 
-def show_help(st):
-    with open('../docs/help.md') as fh:
-        st.markdown(fh.read())
-
-
-def show_annotations(streamlit, annotations, callback=None):
-    streamlit.text_input('Search annotations', key='search')
-    annos = list(reversed(annotations.search(streamlit.session_state.search)))
-    annos = annos[:config.MAX_ANNOTATIONS_DISPLAYED]
-    table = annotations_as_table(annos)
-    streamlit.table(
-        pd.DataFrame(table, columns=['id', 'file', 'n', 'text', 'type', 'link', 'comment']))
-    streamlit.text_input('Display entity', key='display')
-    if streamlit.session_state.display:
-        idx = int(streamlit.session_state.display)
-        row = select_row(table, idx)
-        if row is None:
-            streamlit.error('There is no row with id=%s' % idx)
-        else:
-            _id, fname, _n, etext, _etype, link, comment = row
-            entity = annotations.corpus.get_entity(etext, fname)
-            streamlit.info("**[%s]** (%s) &longrightarrow; %s\n"
-                           % (entity.text(), entity.entity_class(), link))
-            html(streamlit,
-                 entity.contexts_as_html(annotations.corpus,
-                                         limit=config.MAX_CONTEXT_ELEMENTS))
-            link_and_comment = '%s *** %s' % (link, comment) if comment else link
-            streamlit.text_input("Fix link", key='entity_type_fix',
-                                 on_change=callback, args=(entity,),
-                                 value=link_and_comment, label_visibility='hidden')
+    @classmethod
+    def show_entity(cls, streamlit, table, annotations, callback):
+        try:
+            idx = int(streamlit.session_state.display)
+            row = select_row(table, idx)
+            if row is None:
+                streamlit.error('There is no row with id=%s' % idx)
+            else:
+                _id, fname, _n, etext, _etype, link, comment = row
+                entity = annotations.corpus.get_entity(etext, fname)
+                streamlit.info("**[%s]** (%s) &longrightarrow; %s\n"
+                               % (entity.text(), entity.entity_class(), link))
+                html(streamlit,
+                     entity.contexts_as_html(annotations.corpus,
+                                             limit=config.MAX_CONTEXT_ELEMENTS))
+                link_and_comment = '%s *** %s' % (link, comment) if comment else link
+                streamlit.text_input("Fix link", key='entity_type_fix',
+                                     on_change=callback, args=(entity,),
+                                     value=link_and_comment, label_visibility='hidden')
+        except ValueError:
+            streamlit.error('Please enter a numer from the first column above')
 
 
 def annotations_as_table(annotations):
