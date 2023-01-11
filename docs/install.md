@@ -45,12 +45,12 @@ The -t option gives a tag to the image, if you do not add a tag the image create
 Run the container as follows (this can be from any directory):
 
 ```bash
-$ docker run -idt --rm -p 8501:8501 -v $PWD/data:/data link-annotator
+$ docker run -idt --rm -p 80:8501 -v $PWD/data:/data link-annotator
 ```
 
 The -v option in the command above creates a directory `/data` on the container and mounts it to the `data` directory in the current directory. Annotations are written to `/data/annotations.tab` on the container and will because of the mount also be available in `data` and therefore persist after the container is stopped and deleted. It is possible to mount to another local directory as long as that directory has the sources and entity annotations and as well as previously saved link annotations.
 
-To view the application in your browser open [http://localhost:8501](http://localhost:8501). Link annotations will be written to `data/annotations.tab`.
+To view the application in your browser open [http://localhost](http://localhost). Link annotations will be written to `data/annotations.tab`.
 
 ### Running the tool without Docker
 

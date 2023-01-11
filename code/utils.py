@@ -107,6 +107,8 @@ def html(streamlit, text: str):
 
 class DisplayBuilder(object):
 
+    """Utility class to build elements of the auxiliary pane in the tool."""
+
     @classmethod
     def show_progress(cls, streamlit, corpus):
         total_types, percentage_done, done_per_file = corpus.status()
